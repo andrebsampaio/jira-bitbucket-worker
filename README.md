@@ -1,4 +1,4 @@
-# AndreBot
+# jira-bitbucket-worker
 
 Automated code implementation pipeline. When a JIRA ticket is assigned to a designated bot account, this service fetches the ticket details and runs Codex CLI to implement the solution and open a Bitbucket PR — all without human intervention.
 
@@ -25,14 +25,14 @@ Automated code implementation pipeline. When a JIRA ticket is assigned to a desi
 
 1. Go to [admin.atlassian.com](https://admin.atlassian.com) and navigate to your organization
 2. Click **Directory → Users → Invite users**
-3. Create a new user with a dedicated email (e.g. `andrebot@your-company.com`)
+3. Create a new user with a dedicated email (e.g. `jira-bitbucket-worker@your-company.com`)
 4. Assign it to the relevant JIRA projects with at least **Developer** role so it can be assigned tickets
 
 ### Get the Service Account's API Token
 
 1. Log in to JIRA as the service account
 2. Go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-3. Click **Create API token**, give it a name (e.g. `andrebot`), and copy the token
+3. Click **Create API token**, give it a name (e.g. `jira-bitbucket-worker`), and copy the token
 4. This token goes into `JIRA_TOKEN` in your `.env`
 5. The service account's email goes into `JIRA_USER`
 
@@ -119,10 +119,10 @@ curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloud
 cloudflared tunnel login
 
 # Create a named tunnel
-cloudflared tunnel create andrebot
+cloudflared tunnel create jira-bitbucket-worker
 
 # Route a hostname to the tunnel (must be a domain managed by Cloudflare)
-cloudflared tunnel route dns andrebot webhook.your-domain.com
+cloudflared tunnel route dns jira-bitbucket-worker webhook.your-domain.com
 ```
 
 ### Configure the Tunnel
@@ -130,7 +130,7 @@ cloudflared tunnel route dns andrebot webhook.your-domain.com
 Create `~/.cloudflared/config.yml`:
 
 ```yaml
-tunnel: andrebot
+tunnel: jira-bitbucket-worker
 credentials-file: /home/user/.cloudflared/<tunnel-id>.json
 
 ingress:
@@ -142,7 +142,7 @@ ingress:
 ### Run the Tunnel
 
 ```bash
-cloudflared tunnel run andrebot
+cloudflared tunnel run jira-bitbucket-worker
 ```
 
 Your webhook server is now reachable at `https://webhook.your-domain.com`.
@@ -200,24 +200,24 @@ When a ticket is assigned to the bot account:
 ### Run as a Background Service (systemd)
 
 ```ini
-# /etc/systemd/system/andrebot.service
+# /etc/systemd/system/jira-bitbucket-worker.service
 [Unit]
-Description=AndreBot JIRA webhook listener
+Description=jira-bitbucket-worker JIRA webhook listener
 After=network.target
 
 [Service]
-WorkingDirectory=/path/to/andrebot
+WorkingDirectory=/path/to/jira-bitbucket-worker
 ExecStart=/usr/bin/python3 scripts/webhook_server.py
 Restart=always
-EnvironmentFile=/path/to/andrebot/.env
+EnvironmentFile=/path/to/jira-bitbucket-worker/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable andrebot
-sudo systemctl start andrebot
+sudo systemctl enable jira-bitbucket-worker
+sudo systemctl start jira-bitbucket-worker
 ```
 
 ---
