@@ -20,6 +20,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
     if method == "POST":
         post_routes = {
             "/api/settings": _api_settings_save,
+            "/api/cancel": _api_cancel,
         }
         route_fn = post_routes.get(path)
         if route_fn:
@@ -121,6 +122,15 @@ def _api_logs(handler, issue_key: str):
 
 def _api_webhook_health(handler):
     _send_json(handler, db.get_webhook_health())
+
+
+def _api_cancel(handler):
+    from scripts.webhook_server import cancel_current_job
+    issue_key = cancel_current_job()
+    if issue_key:
+        _send_json(handler, {"cancelled": True, "issue_key": issue_key})
+    else:
+        _send_json(handler, {"cancelled": False, "error": "No job is currently running"})
 
 
 # -- Default prompt templates -------------------------------------------------

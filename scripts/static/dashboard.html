@@ -101,6 +101,16 @@
   .badge-open { background: rgba(108,140,255,0.15); color: var(--accent); }
   .badge-merged { background: rgba(52,211,153,0.15); color: var(--green); }
   .badge-declined { background: rgba(248,113,113,0.15); color: var(--red); }
+  .badge-cancelled { background: rgba(251,191,36,0.15); color: var(--yellow); }
+
+  /* Cancel button */
+  .btn-cancel {
+    padding: 4px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--red); background: none; color: var(--red);
+    transition: all 0.15s; margin-left: 12px;
+  }
+  .btn-cancel:hover { background: rgba(248,113,113,0.15); }
+  .btn-cancel:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* Activity log */
   .log-scroll { max-height: 340px; overflow-y: auto; }
@@ -451,8 +461,25 @@ function eventColor(type) {
     queued: 'var(--yellow)', started: 'var(--accent)', 'codex-running': 'var(--purple)',
     pushing: 'var(--orange)', 'creating-pr': 'var(--orange)',
     pr_created: 'var(--green)', done: 'var(--green)', failed: 'var(--red)',
+    cancelled: 'var(--yellow)',
   };
   return colors[type] || 'var(--text-muted)';
+}
+
+async function cancelJob() {
+  if (!confirm('Cancel the current job? The codex process will be killed.')) return;
+  const btn = document.querySelector('.btn-cancel');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling...'; }
+  try {
+    const r = await fetch('/api/cancel', { method: 'POST' });
+    const data = await r.json();
+    if (!data.cancelled) {
+      alert(data.error || 'Nothing to cancel');
+    }
+  } catch (e) {
+    alert('Failed to cancel: ' + e.message);
+  }
+  refresh();
 }
 
 // -- Fetch helpers --
@@ -488,6 +515,7 @@ function renderWorkerStatus(data) {
       <span class="key">${t.issue_key}</span>
       <span style="color: var(--text-muted); margin-left: 8px;">${t.summary || ''}</span>
       ${badge(t.status)}
+      <button class="btn-cancel" onclick="cancelJob()">Cancel</button>
     </div>`;
   } else {
     cur.innerHTML = '<div class="empty">No ticket in progress</div>';

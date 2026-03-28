@@ -33,6 +33,29 @@ WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8080"))
 
 ticket_queue: queue.Queue[str] = queue.Queue()
 
+# Current subprocess — set by the worker, read by cancel_current_job()
+_current_proc: subprocess.Popen | None = None
+_current_issue_key: str | None = None
+_proc_lock = threading.Lock()
+
+
+def cancel_current_job() -> str | None:
+    """Kill the current process_ticket subprocess. Returns the issue key or None."""
+    with _proc_lock:
+        proc = _current_proc
+        key = _current_issue_key
+    if proc is None or key is None:
+        return None
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except OSError:
+        pass
+    return key
+
 
 def verify_signature(body: bytes, signature_header: str) -> bool:
     if not WEBHOOK_SECRET:
@@ -43,16 +66,30 @@ def verify_signature(body: bytes, signature_header: str) -> bool:
 
 def worker():
     """Single worker thread — processes one ticket at a time."""
+    global _current_proc, _current_issue_key
     while True:
         issue_key = ticket_queue.get()
         print(f"[worker] Processing {issue_key} (queue size: {ticket_queue.qsize()} remaining)")
         try:
-            subprocess.run(
+            proc = subprocess.Popen(
                 ["python3", "scripts/process_ticket.py", issue_key],
                 cwd=PROJECT_ROOT,
-                check=True,
             )
-            print(f"[worker] Finished {issue_key}")
+            with _proc_lock:
+                _current_proc = proc
+                _current_issue_key = issue_key
+            returncode = proc.wait()
+            with _proc_lock:
+                _current_proc = None
+                _current_issue_key = None
+            if returncode == 0:
+                print(f"[worker] Finished {issue_key}")
+            elif returncode < 0:
+                # Negative return code = killed by signal (cancel)
+                print(f"[worker] {issue_key} was cancelled (signal {-returncode})")
+                db.ticket_cancelled(issue_key)
+            else:
+                raise subprocess.CalledProcessError(returncode, "process_ticket.py")
         except subprocess.CalledProcessError as e:
             tb = traceback.format_exc()
             print(f"[worker] codex failed for {issue_key}:\n{tb}")

@@ -153,6 +153,17 @@ def ticket_phase(issue_key: str, phase: str, detail: str = ""):
     _notify("ticket_update", {"issue_key": issue_key, "status": phase})
 
 
+def ticket_cancelled(issue_key: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE tickets SET status='cancelled', finished_at=? WHERE issue_key=?",
+            (now, issue_key),
+        )
+    _log_event(issue_key, "cancelled", f"{issue_key} was cancelled by user")
+    _notify("ticket_update", {"issue_key": issue_key, "status": "cancelled"})
+
+
 def ticket_finished(issue_key: str, error: str | None = None):
     now = time.time()
     status = "failed" if error else "done"
