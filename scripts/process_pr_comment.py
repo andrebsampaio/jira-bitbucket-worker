@@ -136,16 +136,17 @@ def find_local_repo(repo_slug: str) -> str | None:
 
 
 def create_worktree(repo_dir: str, source_branch: str, pr_id: str) -> str:
-    """Create a git worktree tracking the PR's source branch. Returns worktree path."""
-    worktree_name = f"pr-fix-{pr_id}-{os.urandom(3).hex()}"
-    worktree_path = os.path.join(WORKSPACE_PATH, "worktrees", worktree_name)
+    """Create a git worktree inside the repo so the sandbox can access .git metadata."""
+    short = os.urandom(3).hex()
+    worktree_name = f"pr-fix-{pr_id}-{short}"
+    worktree_path = os.path.join(repo_dir, ".worktrees", worktree_name)
     os.makedirs(os.path.dirname(worktree_path), exist_ok=True)
 
     # Fetch latest from remote
     subprocess.run(["git", "fetch", "origin"], cwd=repo_dir, check=True)
 
     # Create worktree with a local branch tracking the remote (avoids detached HEAD)
-    local_branch = f"pr-fix-{pr_id}-{os.urandom(3).hex()}"
+    local_branch = f"pr-fix-{pr_id}-{short}"
     subprocess.run(
         ["git", "worktree", "add", "-b", local_branch, worktree_path, f"origin/{source_branch}"],
         cwd=repo_dir,
