@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS webhook_health (
     sig_failures    INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);
+
 INSERT OR IGNORE INTO webhook_health (id, last_received, total_received, sig_failures)
 VALUES (1, NULL, 0, 0);
 """
@@ -349,6 +354,28 @@ def get_stats() -> dict:
         "done": done,
         "failed": failed,
     }
+
+
+# -- Settings -----------------------------------------------------------------
+
+def get_setting(key: str, default: str = "") -> str:
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str):
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
+def get_all_settings() -> dict:
+    with _connect() as conn:
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    return {r["key"]: r["value"] for r in rows}
 
 
 # Initialize on import

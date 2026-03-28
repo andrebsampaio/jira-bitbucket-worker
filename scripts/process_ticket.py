@@ -225,6 +225,8 @@ def create_bitbucket_pr(
 # ---------------------------------------------------------------------------
 
 def build_prompt(issue: dict) -> str:
+    from scripts.dashboard import SETTINGS_DEFAULTS
+
     fields = issue["fields"]
     key = issue["key"]
     summary = fields.get("summary", "")
@@ -240,56 +242,27 @@ def build_prompt(issue: dict) -> str:
             acceptance_criteria = extract_text(field_val)
             break
 
-    sections = [
-        f"You are implementing JIRA ticket {key}.",
-        f"Type: {issue_type}" if issue_type else "",
-        f"Priority: {priority}" if priority else "",
-        f"Summary: {summary}",
-        f"Components: {components}" if components else "",
-        f"Labels: {labels}" if labels else "",
-        "",
-        "Description:",
-        description if description else "(no description provided)",
-    ]
+    # Template variables available for substitution
+    template_vars = {
+        "key": key,
+        "summary": summary,
+        "description": description or "(no description provided)",
+        "components": components,
+        "labels": labels,
+        "priority": priority,
+        "issue_type": issue_type,
+        "acceptance_criteria": acceptance_criteria or "(none)",
+        "workspace_path": WORKSPACE_PATH,
+        "run_manifest": RUN_MANIFEST,
+    }
 
-    if acceptance_criteria:
-        sections += ["", "Acceptance Criteria:", acceptance_criteria]
+    context_tpl = db.get_setting("prompt_context", SETTINGS_DEFAULTS["prompt_context"])
+    instructions_tpl = db.get_setting("prompt_instructions", SETTINGS_DEFAULTS["prompt_instructions"])
 
-    sections += [
-        "",
-        "Instructions:",
-        f"Your working directory is: {WORKSPACE_PATH}",
-        "It contains multiple repo directories (one per folder). Each repo is a git clone.",
-        "",
-        "1. Look at the components listed above and find the matching repo folder(s).",
-        "   The folder names partially match the component names (e.g. component 'CMS UI' → folder 'cms').",
-        "   List the directories to find the right one(s).",
-        "",
-        "2. For each repo you need to work in, create a git worktree:",
-        f"   cd <repo-folder> && git fetch origin && git worktree add ../../worktrees/{key}-<short-slug> -b feature/{key}-<short-slug> origin/<default-branch>",
-        "   (create the worktrees/ directory under the workspace root if needed).",
-        "",
-        "3. Do all implementation, tests, and commits inside the worktree directory.",
-        "   Use a meaningful commit message that references the ticket key.",
-        "",
-        "4. Do NOT push and do NOT create a pull request.",
-        "",
-        "5. After you are done, write a JSON manifest file at:",
-        f"   {RUN_MANIFEST}",
-        "   with this exact shape (valid JSON, no comments):",
-        "   {",
-        f'     "issue_key": "{key}",',
-        '     "worktrees": [',
-        '       {',
-        '         "worktree_path": "<absolute path to the worktree>",',
-        '         "branch": "<the branch name you created>"',
-        '       }',
-        "     ]",
-        "   }",
-        "   Include one entry per worktree you created.",
-    ]
+    context = context_tpl.format_map(template_vars)
+    instructions = instructions_tpl.format_map(template_vars)
 
-    return "\n".join(line for line in sections)
+    return f"{context}\n\nInstructions:\n{instructions}"
 
 
 # ---------------------------------------------------------------------------

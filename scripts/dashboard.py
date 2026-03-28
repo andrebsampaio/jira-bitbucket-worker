@@ -13,12 +13,23 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 _server_start_time = time.time()
 
 
-def handle_dashboard_request(handler) -> bool:
+def handle_dashboard_request(handler, method="GET") -> bool:
     """Handle dashboard-related requests. Returns True if handled, False otherwise."""
     path = handler.path.split("?")[0]
 
+    if method == "POST":
+        post_routes = {
+            "/api/settings": _api_settings_save,
+        }
+        route_fn = post_routes.get(path)
+        if route_fn:
+            route_fn(handler)
+            return True
+        return False
+
     routes = {
         "/dashboard": _serve_html,
+        "/dashboard/settings": _serve_html,
         "/api/status": _api_status,
         "/api/queue": _api_queue,
         "/api/tickets": _api_tickets,
@@ -27,6 +38,7 @@ def handle_dashboard_request(handler) -> bool:
         "/api/errors": _api_errors,
         "/api/stats": _api_stats,
         "/api/webhook-health": _api_webhook_health,
+        "/api/settings": _api_settings_get,
         "/api/stream": _api_stream,
     }
 
@@ -109,6 +121,81 @@ def _api_logs(handler, issue_key: str):
 
 def _api_webhook_health(handler):
     _send_json(handler, db.get_webhook_health())
+
+
+# -- Default prompt templates -------------------------------------------------
+
+DEFAULT_PROMPT_CONTEXT = """You are implementing JIRA ticket {key}.
+Type: {issue_type}
+Priority: {priority}
+Summary: {summary}
+Components: {components}
+Labels: {labels}
+
+Description:
+{description}
+
+Acceptance Criteria:
+{acceptance_criteria}""".strip()
+
+DEFAULT_PROMPT_INSTRUCTIONS = """Your working directory is: {workspace_path}
+It contains multiple repo directories (one per folder). Each repo is a git clone.
+
+1. Look at the components listed above and find the matching repo folder(s).
+   The folder names partially match the component names (e.g. component 'CMS UI' → folder 'cms').
+   List the directories to find the right one(s).
+
+2. For each repo you need to work in, create a git worktree:
+   cd <repo-folder> && git fetch origin && git worktree add ../../worktrees/{key}-<short-slug> -b feature/{key}-<short-slug> origin/<default-branch>
+   (create the worktrees/ directory under the workspace root if needed).
+
+3. Do all implementation, tests, and commits inside the worktree directory.
+   Use a meaningful commit message that references the ticket key.
+
+4. Do NOT push and do NOT create a pull request.
+
+5. After you are done, write a JSON manifest file at:
+   {run_manifest}
+   with this exact shape (valid JSON, no comments):
+   {{
+     "issue_key": "{key}",
+     "worktrees": [
+       {{
+         "worktree_path": "<absolute path to the worktree>",
+         "branch": "<the branch name you created>"
+       }}
+     ]
+   }}
+   Include one entry per worktree you created.""".strip()
+
+SETTINGS_DEFAULTS = {
+    "prompt_context": DEFAULT_PROMPT_CONTEXT,
+    "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
+}
+
+
+def _api_settings_get(handler):
+    saved = db.get_all_settings()
+    # Merge defaults with saved values
+    result = {k: saved.get(k, v) for k, v in SETTINGS_DEFAULTS.items()}
+    # Include any extra saved keys not in defaults
+    result.update({k: v for k, v in saved.items() if k not in result})
+    _send_json(handler, {"settings": result, "defaults": SETTINGS_DEFAULTS})
+
+
+def _api_settings_save(handler):
+    content_length = int(handler.headers.get("Content-Length", 0))
+    body = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        handler.send_response(400)
+        handler.end_headers()
+        return
+    settings = payload.get("settings", {})
+    for key, value in settings.items():
+        db.set_setting(key, value)
+    _send_json(handler, {"ok": True})
 
 
 def _api_stream(handler):

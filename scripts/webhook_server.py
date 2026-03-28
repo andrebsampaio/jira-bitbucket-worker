@@ -69,6 +69,9 @@ class JiraWebhookHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if handle_dashboard_request(self, method="POST"):
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
 

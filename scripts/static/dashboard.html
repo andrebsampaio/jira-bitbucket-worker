@@ -166,6 +166,75 @@
 
   .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px; }
 
+  /* Navigation tabs */
+  .nav-tabs {
+    display: flex; gap: 4px;
+  }
+  .nav-tab {
+    padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500;
+    cursor: pointer; color: var(--text-muted); background: none; border: none;
+    transition: all 0.15s;
+  }
+  .nav-tab:hover { color: var(--text); background: var(--surface2); }
+  .nav-tab.active { color: var(--accent); background: rgba(108,140,255,0.12); }
+
+  /* Settings page */
+  .settings-page { display: none; }
+  .settings-page.active { display: block; }
+  .dashboard-page.active { display: block; }
+  .dashboard-page { display: none; }
+
+  .setting-group {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 16px; overflow: hidden;
+  }
+  .setting-group-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-muted);
+  }
+  .setting-group-body { padding: 18px; }
+  .setting-label {
+    font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px;
+  }
+  .setting-hint {
+    font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.5;
+  }
+  .setting-textarea {
+    width: 100%; min-height: 200px; padding: 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+    line-height: 1.6; resize: vertical; outline: none;
+  }
+  .setting-textarea:focus { border-color: var(--accent); }
+  .setting-actions {
+    display: flex; gap: 10px; align-items: center; margin-top: 16px;
+  }
+  .btn {
+    padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); transition: all 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary { background: var(--surface2); color: var(--text); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-danger { background: none; color: var(--red); border-color: var(--red); }
+  .btn-danger:hover { background: rgba(248,113,113,0.1); }
+  .save-status {
+    font-size: 13px; color: var(--green); opacity: 0; transition: opacity 0.3s;
+  }
+  .save-status.visible { opacity: 1; }
+  .placeholders {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+  }
+  .placeholder-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: rgba(108,140,255,0.1); color: var(--accent); cursor: pointer;
+  }
+  .placeholder-tag:hover { background: rgba(108,140,255,0.2); }
+
   @media (max-width: 900px) {
     .grid { grid-template-columns: 1fr; }
     .stats-row { grid-template-columns: repeat(3, 1fr); }
@@ -177,13 +246,21 @@
 <body>
 
 <header>
-  <h1>JIRA Bitbucket Worker</h1>
+  <div style="display: flex; align-items: center; gap: 20px;">
+    <h1>JIRA Bitbucket Worker</h1>
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="switchPage('dashboard')">Dashboard</button>
+      <button class="nav-tab" onclick="switchPage('settings')">Settings</button>
+    </div>
+  </div>
   <div class="connection-status">
     <span class="dot disconnected" id="sse-dot"></span>
     <span id="sse-label">Connecting...</span>
     <span style="margin-left: 12px; color: var(--text-muted);" id="uptime"></span>
   </div>
 </header>
+
+<div class="dashboard-page active" id="page-dashboard">
 
 <!-- Section 6: Stats -->
 <div class="card" style="margin-bottom: 16px;">
@@ -280,6 +357,46 @@
     </div>
   </div>
 
+</div>
+</div><!-- end dashboard-page -->
+
+<div class="settings-page" id="page-settings">
+  <div class="setting-group">
+    <div class="setting-group-header">Prompt Templates</div>
+    <div class="setting-group-body">
+      <p class="setting-hint">
+        These templates control the prompt sent to Codex when processing a ticket.
+        Use placeholders like <code>{key}</code> that get replaced with ticket data at runtime.
+        Use <code>{{</code> and <code>}}</code> for literal braces in the output.
+      </p>
+      <div class="placeholders" style="margin-bottom: 20px;">
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{key}')">{key}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{summary}')">{summary}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{description}')">{description}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{components}')">{components}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{labels}')">{labels}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{priority}')">{priority}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{issue_type}')">{issue_type}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{acceptance_criteria}')">{acceptance_criteria}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{workspace_path}')">{workspace_path}</span>
+        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{run_manifest}')">{run_manifest}</span>
+      </div>
+
+      <div class="setting-label">Context Template</div>
+      <div class="setting-hint">Ticket information passed to the model. Rendered first in the prompt.</div>
+      <textarea class="setting-textarea" id="setting-prompt_context" spellcheck="false"></textarea>
+
+      <div class="setting-label" style="margin-top: 20px;">Instructions Template</div>
+      <div class="setting-hint">Workflow instructions appended after the context. Prefixed with "Instructions:" automatically.</div>
+      <textarea class="setting-textarea" id="setting-prompt_instructions" spellcheck="false" style="min-height: 300px;"></textarea>
+
+      <div class="setting-actions">
+        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+        <button class="btn btn-danger" onclick="resetSettings()">Reset to Defaults</button>
+        <span class="save-status" id="save-status">Saved!</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -562,7 +679,73 @@ function connectSSE() {
   });
 }
 
+// -- Page navigation --
+function switchPage(page) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.dashboard-page, .settings-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`.nav-tab[onclick*="${page}"]`).classList.add('active');
+  if (page === 'settings') loadSettings();
+  // Handle direct URL navigation
+  history.replaceState(null, '', page === 'settings' ? '/dashboard/settings' : '/dashboard');
+}
+
+// -- Settings --
+let settingsDefaults = {};
+
+async function loadSettings() {
+  const data = await fetchJSON('/api/settings');
+  settingsDefaults = data.defaults || {};
+  const settings = data.settings || {};
+  for (const [key, val] of Object.entries(settings)) {
+    const el = document.getElementById('setting-' + key);
+    if (el) el.value = val;
+  }
+}
+
+async function saveSettings() {
+  const settings = {};
+  document.querySelectorAll('.setting-textarea').forEach(el => {
+    const key = el.id.replace('setting-', '');
+    settings[key] = el.value;
+  });
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ settings }),
+  });
+  const status = $('save-status');
+  status.classList.add('visible');
+  setTimeout(() => status.classList.remove('visible'), 2000);
+}
+
+function resetSettings() {
+  if (!confirm('Reset all prompts to their defaults? Unsaved changes will be lost.')) return;
+  for (const [key, val] of Object.entries(settingsDefaults)) {
+    const el = document.getElementById('setting-' + key);
+    if (el) el.value = val;
+  }
+}
+
+function insertPlaceholder(textareaKey, placeholder) {
+  // Insert into whichever textarea is focused, or the context one by default
+  const active = document.activeElement;
+  const target = (active && active.classList.contains('setting-textarea'))
+    ? active
+    : document.getElementById('setting-' + textareaKey);
+  if (!target) return;
+  const start = target.selectionStart;
+  const end = target.selectionEnd;
+  target.value = target.value.slice(0, start) + placeholder + target.value.slice(end);
+  target.selectionStart = target.selectionEnd = start + placeholder.length;
+  target.focus();
+}
+
 // -- Init --
+// Check URL for initial page
+if (location.pathname === '/dashboard/settings') {
+  switchPage('settings');
+}
 refresh();
 connectSSE();
 // Fallback polling every 30s
