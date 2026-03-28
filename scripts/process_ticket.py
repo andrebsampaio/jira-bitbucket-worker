@@ -390,8 +390,14 @@ def main():
     db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
     db.clear_ticket_logs(issue_key)
 
+    cmd = ["codex", "exec", "--skip-git-repo-check"]
+    model = db.get_setting("model", "")
+    if model:
+        cmd += ["-m", model]
+    cmd.append(prompt)
+
     proc = subprocess.Popen(
-        ["codex", "exec", "--skip-git-repo-check", prompt],
+        cmd,
         cwd=WORKSPACE_PATH,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

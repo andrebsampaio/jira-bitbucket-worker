@@ -171,6 +171,7 @@ It contains multiple repo directories (one per folder). Each repo is a git clone
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
+    "model": "",
 }
 
 

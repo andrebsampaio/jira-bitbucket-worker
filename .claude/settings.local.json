@@ -6,7 +6,8 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm exec:*)",
       "Bash(git ls-tree:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(codex --help)"
     ]
   }
 }

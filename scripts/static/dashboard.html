@@ -362,6 +362,20 @@
 
 <div class="settings-page" id="page-settings">
   <div class="setting-group">
+    <div class="setting-group-header">Model</div>
+    <div class="setting-group-body">
+      <div class="setting-label">Codex Model</div>
+      <div class="setting-hint">The model passed to <code>codex exec -m</code>. Leave empty to use the Codex default.</div>
+      <input type="text" id="setting-model" spellcheck="false" placeholder="e.g. o3, o4-mini, claude-sonnet-4-20250514"
+        style="width: 100%; max-width: 400px; padding: 8px 12px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--bg); color: var(--text);
+          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+      >
+    </div>
+  </div>
+
+  <div class="setting-group">
     <div class="setting-group-header">Prompt Templates</div>
     <div class="setting-group-body">
       <p class="setting-hint">
@@ -705,7 +719,8 @@ async function loadSettings() {
 
 async function saveSettings() {
   const settings = {};
-  document.querySelectorAll('.setting-textarea').forEach(el => {
+  document.querySelectorAll('.setting-textarea, [id^="setting-"]').forEach(el => {
+    if (!el.id.startsWith('setting-')) return;
     const key = el.id.replace('setting-', '');
     settings[key] = el.value;
   });
