@@ -186,9 +186,23 @@ It contains multiple repo directories (one per folder). Each repo is a git clone
    }}
    Include one entry per worktree you created.""".strip()
 
+DEFAULT_PROMPT_PR_COMMENT = """A reviewer commented on PR "{pr_title}" in repo {repo_slug} (branch: {source_branch}).
+
+Reviewer's comment:
+{comment}
+
+File: {file_path}
+Line: {line}
+
+Diff:
+{diff}
+
+Apply the requested fix. Make a single focused commit with a clear message referencing the PR comment.""".strip()
+
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
+    "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
     "model": "",
 }
 

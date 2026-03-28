@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-JIRA webhook listener. Triggers codex when a ticket is assigned to the configured user.
-Tickets are queued and processed sequentially, one at a time.
+JIRA webhook listener and Bitbucket PR comment bot.
+Triggers codex when a ticket is assigned to the configured user,
+or when the bot is mentioned in a Bitbucket PR comment.
+Jobs are queued and processed sequentially, one at a time.
 """
 
 import hashlib
@@ -31,8 +33,11 @@ from scripts.dashboard import handle_dashboard_request
 TRIGGER_ASSIGNEE = os.environ["TRIGGER_ASSIGNEE"]
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8080"))
+BOT_MENTION = os.environ.get("BOT_MENTION", "@andrebot")
+BITBUCKET_USER = os.environ.get("BITBUCKET_USER", os.environ.get("JIRA_USER", ""))
 
-ticket_queue: queue.Queue[str] = queue.Queue()
+# Typed queue: ("ticket", issue_key) or ("pr_comment", workspace, repo_slug, pr_id, comment_id)
+ticket_queue: queue.Queue[tuple] = queue.Queue()
 
 # Current subprocess — set by the worker, read by cancel_current_job()
 _current_proc: subprocess.Popen | None = None
@@ -69,14 +74,28 @@ def verify_signature(body: bytes, signature_header: str) -> bool:
 
 
 def worker():
-    """Single worker thread — processes one ticket at a time."""
+    """Single worker thread — processes one job at a time."""
     global _current_proc, _current_issue_key
     while True:
-        issue_key = ticket_queue.get()
+        job = ticket_queue.get()
+        job_type = job[0]
+
+        if job_type == "ticket":
+            issue_key = job[1]
+            cmd = ["python3", "scripts/process_ticket.py", issue_key]
+        elif job_type == "pr_comment":
+            _, workspace, repo_slug, pr_id, comment_id = job
+            issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
+            cmd = ["python3", "scripts/process_pr_comment.py", workspace, repo_slug, pr_id, comment_id]
+        else:
+            print(f"[worker] Unknown job type: {job_type}")
+            ticket_queue.task_done()
+            continue
+
         print(f"[worker] Processing {issue_key} (queue size: {ticket_queue.qsize()} remaining)")
         try:
             proc = subprocess.Popen(
-                ["python3", "scripts/process_ticket.py", issue_key],
+                cmd,
                 cwd=PROJECT_ROOT,
                 start_new_session=True,
             )
@@ -94,7 +113,8 @@ def worker():
                 print(f"[worker] {issue_key} was cancelled (signal {-returncode})")
                 db.ticket_cancelled(issue_key)
             else:
-                raise subprocess.CalledProcessError(returncode, "process_ticket.py")
+                script = cmd[1].split("/")[-1]
+                raise subprocess.CalledProcessError(returncode, script)
         except subprocess.CalledProcessError as e:
             tb = traceback.format_exc()
             print(f"[worker] codex failed for {issue_key}:\n{tb}")
@@ -137,7 +157,8 @@ class JiraWebhookHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
-        threading.Thread(target=handle_event, args=(payload,), daemon=True).start()
+        event_key = self.headers.get("X-Event-Key", "")
+        threading.Thread(target=handle_event, args=(payload, event_key), daemon=True).start()
 
     def handle(self):
         try:
@@ -149,7 +170,13 @@ class JiraWebhookHandler(BaseHTTPRequestHandler):
         print(f"[webhook] {self.address_string()} - {format % args}")
 
 
-def handle_event(payload: dict):
+def handle_event(payload: dict, event_key: str = ""):
+    # Bitbucket PR comment event
+    if event_key == "pullrequest:comment_created":
+        handle_pr_comment_event(payload)
+        return
+
+    # JIRA event (has webhookEvent field)
     event = payload.get("webhookEvent", "")
     if event != "jira:issue_updated":
         return
@@ -171,7 +198,47 @@ def handle_event(payload: dict):
 
     print(f"[webhook] Queuing {issue_key} (queue size: {ticket_queue.qsize()})")
     db.ticket_queued(issue_key)
-    ticket_queue.put(issue_key)
+    ticket_queue.put(("ticket", issue_key))
+
+
+def handle_pr_comment_event(payload: dict):
+    """Handle Bitbucket pullrequest:comment_created webhook."""
+    comment = payload.get("comment", {})
+    comment_body = comment.get("content", {}).get("raw", "")
+
+    # Ignore if bot is not mentioned
+    if BOT_MENTION not in comment_body:
+        return
+
+    # Ignore comments authored by the bot itself (prevent loops)
+    comment_author = comment.get("user", {}).get("username", "")
+    if comment_author and comment_author == BITBUCKET_USER:
+        print("[webhook] Ignoring comment authored by bot user")
+        return
+
+    # Only process comments on OPEN PRs
+    pr = payload.get("pullrequest", {})
+    pr_state = pr.get("state", "").upper()
+    if pr_state != "OPEN":
+        print(f"[webhook] Ignoring comment on PR in state: {pr_state}")
+        return
+
+    # Extract identifiers
+    pr_id = str(pr.get("id", ""))
+    comment_id = str(comment.get("id", ""))
+    repo = payload.get("repository", {})
+    repo_slug = repo.get("name", "") or repo.get("full_name", "").split("/")[-1]
+    workspace = repo.get("full_name", "").split("/")[0] if "/" in repo.get("full_name", "") else ""
+
+    if not all([pr_id, comment_id, repo_slug, workspace]):
+        print("[webhook] Missing identifiers in PR comment payload")
+        return
+
+    issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
+    comment_text = comment_body[:200]
+    print(f"[webhook] Queuing PR comment job {issue_key} (queue size: {ticket_queue.qsize()})")
+    db.ticket_queued(issue_key, summary=comment_text)
+    ticket_queue.put(("pr_comment", workspace, repo_slug, pr_id, comment_id))
 
 
 if __name__ == "__main__":

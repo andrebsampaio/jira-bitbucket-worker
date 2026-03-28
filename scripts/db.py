@@ -120,12 +120,12 @@ def _notify(event_type: str, data: dict):
 
 # -- Ticket lifecycle ---------------------------------------------------------
 
-def ticket_queued(issue_key: str):
+def ticket_queued(issue_key: str, summary: str = ""):
     now = time.time()
     with _connect() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO tickets (issue_key, status, queued_at) VALUES (?, 'queued', ?)",
-            (issue_key, now),
+            "INSERT OR REPLACE INTO tickets (issue_key, summary, status, queued_at) VALUES (?, ?, 'queued', ?)",
+            (issue_key, summary or None, now),
         )
     _log_event(issue_key, "queued", f"Ticket {issue_key} added to queue")
     _notify("ticket_update", {"issue_key": issue_key, "status": "queued"})
