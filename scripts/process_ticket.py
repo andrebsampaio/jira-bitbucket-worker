@@ -22,7 +22,8 @@ JIRA_URL = os.environ["JIRA_URL"].rstrip("/")
 JIRA_USER = os.environ["JIRA_USER"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 BITBUCKET_WORKSPACE = os.environ["BITBUCKET_WORKSPACE"]
-BITBUCKET_API_KEY = os.environ["BITBUCKET_API_KEY"]
+BITBUCKET_USER = os.environ.get("BITBUCKET_USER", JIRA_USER)
+BITBUCKET_TOKEN = os.environ.get("BITBUCKET_TOKEN", JIRA_TOKEN)
 WORKSPACE_PATH = os.environ["WORKSPACE_PATH"]
 
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
@@ -122,11 +123,8 @@ def has_unpushed_commits(worktree_dir: str) -> bool:
 # Bitbucket helpers
 # ---------------------------------------------------------------------------
 
-def _bb_headers() -> dict:
-    return {
-        "Authorization": f"Bearer {BITBUCKET_API_KEY}",
-        "Content-Type": "application/json",
-    }
+def _bb_auth() -> tuple[str, str]:
+    return (BITBUCKET_USER, BITBUCKET_TOKEN)
 
 
 def parse_bitbucket_remote(url: str) -> tuple[str, str] | None:
@@ -151,7 +149,7 @@ def git_remote_origin(repo_root: str) -> str | None:
 
 def fetch_repo_mainbranch(workspace: str, repo_slug: str) -> str:
     url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}"
-    response = requests.get(url, headers=_bb_headers())
+    response = requests.get(url, auth=_bb_auth())
     response.raise_for_status()
     data = response.json()
     main = (data.get("mainbranch") or {}).get("name")
@@ -173,7 +171,7 @@ def create_bitbucket_pr(
         "source": {"branch": {"name": source_branch}},
         "destination": {"branch": {"name": dest_branch}},
     }
-    response = requests.post(url, headers=_bb_headers(), json=body)
+    response = requests.post(url, auth=_bb_auth(), json=body)
     if response.status_code == 409:
         raise RuntimeError(
             "Pull request already exists or branch state conflicts. "
