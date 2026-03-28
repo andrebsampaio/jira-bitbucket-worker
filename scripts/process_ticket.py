@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import traceback
 
 import requests
 from dotenv import load_dotenv
@@ -479,5 +480,5 @@ if __name__ == "__main__":
     except Exception as exc:
         issue_key = sys.argv[1] if len(sys.argv) > 1 else None
         if issue_key:
-            db.ticket_finished(issue_key, error=str(exc))
+            db.ticket_finished(issue_key, error=traceback.format_exc())
         raise

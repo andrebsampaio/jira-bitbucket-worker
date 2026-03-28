@@ -11,6 +11,7 @@ import os
 import queue
 import subprocess
 import threading
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 from dotenv import load_dotenv
@@ -53,8 +54,9 @@ def worker():
             )
             print(f"[worker] Finished {issue_key}")
         except subprocess.CalledProcessError as e:
-            print(f"[worker] codex failed for {issue_key}: {e}")
-            db.ticket_finished(issue_key, error=str(e))
+            tb = traceback.format_exc()
+            print(f"[worker] codex failed for {issue_key}:\n{tb}")
+            db.ticket_finished(issue_key, error=tb)
         finally:
             ticket_queue.task_done()
 
