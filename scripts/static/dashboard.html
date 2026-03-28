@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JIRA Bitbucket Worker - Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232733;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6c8cff;
+    --green: #34d399;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.5; padding: 24px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  .connection-status {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.connected { background: var(--green); }
+  .dot.disconnected { background: var(--red); }
+
+  /* Grid layout */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid .full { grid-column: 1 / -1; }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-muted);
+  }
+  .card-body { padding: 18px; }
+
+  /* Stats row */
+  .stats-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .stat-box {
+    background: var(--surface2); border-radius: 8px; padding: 14px;
+    text-align: center;
+  }
+  .stat-box .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat-box .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+  /* Worker status */
+  .worker-status { display: flex; align-items: center; gap: 16px; }
+  .worker-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+    border-radius: 20px; font-size: 13px; font-weight: 600;
+  }
+  .worker-badge.idle { background: rgba(52,211,153,0.15); color: var(--green); }
+  .worker-badge.busy { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .worker-current { font-size: 14px; }
+  .worker-current .key { font-weight: 600; color: var(--accent); }
+
+  /* Timeline */
+  .timeline-item {
+    display: grid; grid-template-columns: 100px 120px 1fr auto;
+    gap: 12px; align-items: center; padding: 10px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-key { font-weight: 600; color: var(--accent); }
+  .timeline-summary { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .timeline-duration { color: var(--text-muted); font-size: 12px; text-align: right; }
+
+  /* Status badges */
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+  }
+  .badge-queued { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .badge-processing { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .badge-codex-running { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .badge-pushing { background: rgba(251,146,60,0.15); color: var(--orange); }
+  .badge-creating-pr { background: rgba(251,146,60,0.15); color: var(--orange); }
+  .badge-done { background: rgba(52,211,153,0.15); color: var(--green); }
+  .badge-failed { background: rgba(248,113,113,0.15); color: var(--red); }
+  .badge-review { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .badge-open { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .badge-merged { background: rgba(52,211,153,0.15); color: var(--green); }
+  .badge-declined { background: rgba(248,113,113,0.15); color: var(--red); }
+
+  /* Activity log */
+  .log-scroll { max-height: 340px; overflow-y: auto; }
+  .log-entry {
+    display: grid; grid-template-columns: 70px 80px 1fr;
+    gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-time { color: var(--text-muted); }
+  .log-type { font-weight: 600; }
+  .log-detail { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* PR list */
+  .pr-item {
+    display: grid; grid-template-columns: 90px 1fr auto auto;
+    gap: 12px; align-items: center; padding: 10px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .pr-item:last-child { border-bottom: none; }
+  .pr-link { color: var(--accent); text-decoration: none; }
+  .pr-link:hover { text-decoration: underline; }
+  .pr-repo { color: var(--text-muted); font-size: 12px; }
+
+  /* Error panel */
+  .error-item {
+    background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.2);
+    border-radius: 8px; padding: 12px; margin-bottom: 10px;
+  }
+  .error-item:last-child { margin-bottom: 0; }
+  .error-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .error-key { font-weight: 600; color: var(--red); }
+  .error-time { font-size: 12px; color: var(--text-muted); }
+  .error-msg { font-size: 12px; color: var(--text-muted); font-family: monospace; white-space: pre-wrap; word-break: break-all; }
+
+  /* Webhook health */
+  .health-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .health-item { background: var(--surface2); border-radius: 8px; padding: 12px; }
+  .health-item .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .health-item .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+
+  .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(3, 1fr); }
+    .timeline-item { grid-template-columns: 80px 90px 1fr; }
+    .timeline-duration { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>JIRA Bitbucket Worker</h1>
+  <div class="connection-status">
+    <span class="dot disconnected" id="sse-dot"></span>
+    <span id="sse-label">Connecting...</span>
+    <span style="margin-left: 12px; color: var(--text-muted);" id="uptime"></span>
+  </div>
+</header>
+
+<!-- Section 6: Stats -->
+<div class="card" style="margin-bottom: 16px;">
+  <div class="card-header">Stats</div>
+  <div class="card-body">
+    <div class="stats-row" id="stats-row">
+      <div class="stat-box"><div class="value" id="stat-today">-</div><div class="label">Today</div></div>
+      <div class="stat-box"><div class="value" id="stat-week">-</div><div class="label">This Week</div></div>
+      <div class="stat-box"><div class="value" id="stat-total">-</div><div class="label">Total</div></div>
+      <div class="stat-box"><div class="value" id="stat-rate">-</div><div class="label">Success Rate</div></div>
+      <div class="stat-box"><div class="value" id="stat-avg">-</div><div class="label">Avg Duration</div></div>
+      <div class="stat-box"><div class="value" id="stat-prs">-</div><div class="label">PRs Created</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Section 1: Live Queue & Worker Status -->
+  <div class="card">
+    <div class="card-header">
+      Worker Status
+      <span class="worker-badge idle" id="worker-badge">Idle</span>
+    </div>
+    <div class="card-body">
+      <div id="worker-current" style="margin-bottom: 14px;"></div>
+      <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+        Queue (<span id="queue-count">0</span> pending)
+      </div>
+      <div id="queue-list"></div>
+    </div>
+  </div>
+
+  <!-- Webhook Health (nice-to-have, included in worker card area) -->
+  <div class="card">
+    <div class="card-header">Webhook Health</div>
+    <div class="card-body">
+      <div class="health-grid" id="health-grid">
+        <div class="health-item">
+          <div class="label">Last Received</div>
+          <div class="value" id="wh-last">-</div>
+        </div>
+        <div class="health-item">
+          <div class="label">Total Received</div>
+          <div class="value" id="wh-total">0</div>
+        </div>
+        <div class="health-item">
+          <div class="label">Sig Failures</div>
+          <div class="value" id="wh-failures" style="color: var(--green);">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: Ticket Processing Timeline -->
+  <div class="card full">
+    <div class="card-header">Ticket Processing Timeline</div>
+    <div class="card-body">
+      <div id="timeline"></div>
+    </div>
+  </div>
+
+  <!-- Section 3: Recent Activity Log -->
+  <div class="card">
+    <div class="card-header">Activity Log</div>
+    <div class="card-body">
+      <div class="log-scroll" id="activity-log"></div>
+    </div>
+  </div>
+
+  <!-- Section 4: Pull Requests -->
+  <div class="card">
+    <div class="card-header">Pull Requests</div>
+    <div class="card-body">
+      <div id="pr-list"></div>
+    </div>
+  </div>
+
+  <!-- Section 5: Errors & Failures -->
+  <div class="card full">
+    <div class="card-header">
+      Errors & Failures
+      <span id="error-count" style="font-size: 12px; color: var(--red);"></span>
+    </div>
+    <div class="card-body">
+      <div id="error-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = (s) => document.getElementById(s);
+
+function fmt(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function fmtDate(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmt(ts);
+}
+
+function fmtDuration(sec) {
+  if (!sec || sec <= 0) return '-';
+  if (sec < 60) return Math.round(sec) + 's';
+  if (sec < 3600) return Math.round(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
+  return Math.round(sec / 3600) + 'h ' + Math.round((sec % 3600) / 60) + 'm';
+}
+
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m uptime` : `${m}m uptime`;
+}
+
+function badge(status) {
+  const cls = 'badge badge-' + (status || 'queued').replace(/[\s_]/g, '-').toLowerCase();
+  return `<span class="${cls}">${status || 'unknown'}</span>`;
+}
+
+function eventColor(type) {
+  const colors = {
+    queued: 'var(--yellow)', started: 'var(--accent)', 'codex-running': 'var(--purple)',
+    pushing: 'var(--orange)', 'creating-pr': 'var(--orange)',
+    pr_created: 'var(--green)', done: 'var(--green)', failed: 'var(--red)',
+  };
+  return colors[type] || 'var(--text-muted)';
+}
+
+// -- Fetch helpers --
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+// -- Render functions --
+function renderStats(data) {
+  $('stat-today').textContent = data.tickets_today;
+  $('stat-week').textContent = data.tickets_this_week;
+  $('stat-total').textContent = data.total_tickets;
+  $('stat-rate').textContent = data.success_rate + '%';
+  $('stat-avg').textContent = fmtDuration(data.avg_duration_seconds);
+  $('stat-prs').textContent = data.total_prs;
+}
+
+function renderWorkerStatus(data) {
+  const b = $('worker-badge');
+  if (data.state === 'busy') {
+    b.className = 'worker-badge busy';
+    b.textContent = 'Processing';
+  } else {
+    b.className = 'worker-badge idle';
+    b.textContent = 'Idle';
+  }
+
+  const cur = $('worker-current');
+  if (data.current_ticket) {
+    const t = data.current_ticket;
+    cur.innerHTML = `<div class="worker-current">
+      <span class="key">${t.issue_key}</span>
+      <span style="color: var(--text-muted); margin-left: 8px;">${t.summary || ''}</span>
+      ${badge(t.status)}
+    </div>`;
+  } else {
+    cur.innerHTML = '<div class="empty">No ticket in progress</div>';
+  }
+
+  $('queue-count').textContent = data.queue_size;
+  if (data.uptime_seconds) {
+    $('uptime').textContent = fmtUptime(data.uptime_seconds);
+  }
+}
+
+function renderQueue(data) {
+  const el = $('queue-list');
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">Queue empty</div>';
+    return;
+  }
+  el.innerHTML = data.map(t =>
+    `<div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;">
+      <span style="font-weight: 600; color: var(--yellow);">${t.issue_key}</span>
+      <span style="color: var(--text-muted); font-size: 12px;">${fmt(t.queued_at)}</span>
+    </div>`
+  ).join('');
+}
+
+function renderTimeline(data) {
+  const el = $('timeline');
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">No tickets processed yet</div>';
+    return;
+  }
+  el.innerHTML = data.map(t => {
+    const dur = t.finished_at && t.started_at ? t.finished_at - t.started_at : null;
+    return `<div class="timeline-item">
+      <span class="timeline-key">${t.issue_key}</span>
+      ${badge(t.status)}
+      <span class="timeline-summary">${t.summary || ''}</span>
+      <span class="timeline-duration">${dur ? fmtDuration(dur) : (t.started_at ? 'In progress...' : '-')}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderActivityLog(data) {
+  const el = $('activity-log');
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">No activity yet</div>';
+    return;
+  }
+  el.innerHTML = data.map(e =>
+    `<div class="log-entry">
+      <span class="log-time">${fmt(e.ts)}</span>
+      <span class="log-type" style="color: ${eventColor(e.event_type)};">${e.event_type}</span>
+      <span class="log-detail">${e.detail || ''}</span>
+    </div>`
+  ).join('');
+}
+
+function renderPRs(data) {
+  const el = $('pr-list');
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">No pull requests yet</div>';
+    return;
+  }
+  el.innerHTML = data.map(pr =>
+    `<div class="pr-item">
+      <span style="font-weight: 600; color: var(--accent);">${pr.issue_key}</span>
+      <div>
+        <a href="${pr.pr_url}" target="_blank" class="pr-link">${pr.branch}</a>
+        <div class="pr-repo">${pr.workspace}/${pr.repo_slug} &rarr; ${pr.dest_branch}</div>
+      </div>
+      ${badge(pr.status)}
+      <span style="font-size: 12px; color: var(--text-muted);">${fmt(pr.created_at)}</span>
+    </div>`
+  ).join('');
+}
+
+function renderErrors(data) {
+  const el = $('error-list');
+  $('error-count').textContent = data.length ? `${data.length} failure${data.length > 1 ? 's' : ''}` : '';
+  if (!data.length) {
+    el.innerHTML = '<div class="empty">No errors - all clear</div>';
+    return;
+  }
+  el.innerHTML = data.map(e =>
+    `<div class="error-item">
+      <div class="error-header">
+        <span class="error-key">${e.issue_key} - ${e.summary || 'Unknown'}</span>
+        <span class="error-time">${fmtDate(e.finished_at)}</span>
+      </div>
+      <div class="error-msg">${e.error || 'No error details recorded'}</div>
+    </div>`
+  ).join('');
+}
+
+function renderWebhookHealth(data) {
+  $('wh-last').textContent = data.last_received ? fmtDate(data.last_received) : 'Never';
+  $('wh-total').textContent = data.total_received || 0;
+  const failures = $('wh-failures');
+  failures.textContent = data.sig_failures || 0;
+  failures.style.color = data.sig_failures > 0 ? 'var(--red)' : 'var(--green)';
+}
+
+// -- Full refresh --
+async function refresh() {
+  const [status, queue, tickets, events, prs, errors, stats, health] = await Promise.all([
+    fetchJSON('/api/status'),
+    fetchJSON('/api/queue'),
+    fetchJSON('/api/tickets'),
+    fetchJSON('/api/events'),
+    fetchJSON('/api/prs'),
+    fetchJSON('/api/errors'),
+    fetchJSON('/api/stats'),
+    fetchJSON('/api/webhook-health'),
+  ]);
+  renderWorkerStatus(status);
+  renderQueue(queue);
+  renderTimeline(tickets);
+  renderActivityLog(events);
+  renderPRs(prs);
+  renderErrors(errors);
+  renderStats(stats);
+  renderWebhookHealth(health);
+}
+
+// -- SSE live updates --
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+  es.onopen = () => {
+    $('sse-dot').className = 'dot connected';
+    $('sse-label').textContent = 'Live';
+  };
+  es.onerror = () => {
+    $('sse-dot').className = 'dot disconnected';
+    $('sse-label').textContent = 'Reconnecting...';
+  };
+  // On any event, do a full refresh (simple and reliable)
+  ['ticket_update', 'pr_created', 'event'].forEach(evt => {
+    es.addEventListener(evt, () => refresh());
+  });
+}
+
+// -- Init --
+refresh();
+connectSSE();
+// Fallback polling every 30s
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

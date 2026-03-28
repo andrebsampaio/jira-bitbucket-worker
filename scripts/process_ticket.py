@@ -18,6 +18,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Ensure project root is on sys.path so "scripts" package is importable
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from scripts import db
+
 JIRA_URL = os.environ["JIRA_URL"].rstrip("/")
 JIRA_USER = os.environ["JIRA_USER"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
@@ -39,6 +46,37 @@ def fetch_issue(issue_key: str) -> dict:
     response = requests.get(url, auth=(JIRA_USER, JIRA_TOKEN))
     response.raise_for_status()
     return response.json()
+
+
+def get_transitions(issue_key: str) -> list[dict]:
+    """Fetch available transitions for the given issue."""
+    url = f"{JIRA_URL}/rest/api/3/issue/{issue_key}/transitions"
+    response = requests.get(url, auth=(JIRA_USER, JIRA_TOKEN))
+    response.raise_for_status()
+    return response.json().get("transitions", [])
+
+
+def transition_issue(issue_key: str, target_status: str) -> bool:
+    """Transition the issue to the given target status name (case-insensitive).
+
+    Returns True if the transition was performed, False if no matching transition was found.
+    """
+    transitions = get_transitions(issue_key)
+    for t in transitions:
+        if t["name"].lower() == target_status.lower():
+            url = f"{JIRA_URL}/rest/api/3/issue/{issue_key}/transitions"
+            body = {"transition": {"id": t["id"]}}
+            response = requests.post(url, auth=(JIRA_USER, JIRA_TOKEN), json=body)
+            response.raise_for_status()
+            print(f"[process] Transitioned {issue_key} to '{target_status}'")
+            return True
+    available = [t["name"] for t in transitions]
+    print(
+        f"[process] WARNING: No transition to '{target_status}' found for {issue_key}. "
+        f"Available transitions: {available}",
+        file=sys.stderr,
+    )
+    return False
 
 
 def extract_text(adf_or_str) -> str:
@@ -329,8 +367,14 @@ def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: st
 
     print(f"[process] Creating PR: {workspace}/{repo_slug} {branch} -> {dest}")
     pr = create_bitbucket_pr(workspace, repo_slug, title, body, branch, dest)
-    html = (pr.get("links", {}).get("html") or {}).get("href")
-    print(f"[process] Pull request: {html or pr.get('id')}")
+    html = (pr.get("links", {}).get("html") or {}).get("href", "")
+    pr_id = str(pr.get("id", ""))
+    print(f"[process] Pull request: {html or pr_id}")
+
+    db.pr_created(
+        issue_key=issue_key, repo_slug=repo_slug, workspace=workspace,
+        branch=branch, dest_branch=dest, pr_url=html, pr_id=pr_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +390,18 @@ def main():
     print(f"[process] Fetching {issue_key} from JIRA...")
     issue = fetch_issue(issue_key)
 
+    fields = issue.get("fields", {})
+    db.ticket_started(
+        issue_key,
+        summary=fields.get("summary", ""),
+        priority=(fields.get("priority") or {}).get("name", ""),
+        issue_type=(fields.get("issuetype") or {}).get("name", ""),
+        components=", ".join(c["name"] for c in fields.get("components", [])),
+    )
+
+    # Move ticket to In Progress
+    transition_issue(issue_key, "In Progress")
+
     # Clean up any old manifest
     try:
         os.remove(RUN_MANIFEST)
@@ -356,6 +412,8 @@ def main():
     prompt = build_prompt(issue)
     print(f"[process] Starting codex for {issue_key} in {WORKSPACE_PATH}")
     print(f"[process] Prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
+
+    db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
 
     subprocess.run(
         ["codex", "exec", "--skip-git-repo-check", prompt],
@@ -374,18 +432,25 @@ def main():
         return
 
     print(f"[process] Found {len(worktrees)} worktree(s) to process")
+    db.ticket_phase(issue_key, "pushing", f"Pushing {len(worktrees)} branch(es) for {issue_key}")
 
     # Push branches, create PRs, then clean up each worktree
+    any_pr_created = False
     for entry in worktrees:
         wt_path = entry["worktree_path"]
         branch = entry["branch"]
         try:
             process_worktree(issue, issue_key, wt_path, branch)
+            any_pr_created = True
         except Exception as e:
             print(f"[process] Error processing {wt_path}: {e}", file=sys.stderr)
         finally:
             print(f"[process] Removing worktree {wt_path}")
             remove_worktree(wt_path)
+
+    # Move ticket to Review if at least one PR was created
+    if any_pr_created:
+        transition_issue(issue_key, "Review")
 
     # Clean up manifest
     try:
@@ -393,8 +458,15 @@ def main():
     except FileNotFoundError:
         pass
 
+    db.ticket_finished(issue_key)
     print(f"[process] Done processing {issue_key}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        issue_key = sys.argv[1] if len(sys.argv) > 1 else None
+        if issue_key:
+            db.ticket_finished(issue_key, error=str(exc))
+        raise

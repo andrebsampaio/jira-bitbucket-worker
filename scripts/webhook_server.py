@@ -17,12 +17,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Ensure project root is on sys.path so "scripts" package is importable
+import sys
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from scripts import db
+from scripts.dashboard import handle_dashboard_request
+
 TRIGGER_ASSIGNEE = os.environ["TRIGGER_ASSIGNEE"]
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8080"))
 
 ticket_queue: queue.Queue[str] = queue.Queue()
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def verify_signature(body: bytes, signature_header: str) -> bool:
@@ -46,17 +54,28 @@ def worker():
             print(f"[worker] Finished {issue_key}")
         except subprocess.CalledProcessError as e:
             print(f"[worker] codex failed for {issue_key}: {e}")
+            db.ticket_finished(issue_key, error=str(e))
         finally:
             ticket_queue.task_done()
 
 
 class JiraWebhookHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if handle_dashboard_request(self):
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length)
 
+        db.webhook_received()
+
         signature = self.headers.get("X-Hub-Signature-256", "")
         if WEBHOOK_SECRET and not verify_signature(body, signature):
+            db.webhook_sig_failure()
+            db.log_event(None, "sig_failure", "Webhook signature validation failed")
             self.send_response(401)
             self.end_headers()
             return
@@ -98,6 +117,7 @@ def handle_event(payload: dict):
         return
 
     print(f"[webhook] Queuing {issue_key} (queue size: {ticket_queue.qsize()})")
+    db.ticket_queued(issue_key)
     ticket_queue.put(issue_key)
 
 
