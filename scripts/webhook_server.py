@@ -9,7 +9,6 @@ import hmac
 import json
 import os
 import queue
-import signal
 import subprocess
 import threading
 import traceback
@@ -40,38 +39,19 @@ _current_issue_key: str | None = None
 _proc_lock = threading.Lock()
 
 
-def _kill_tree(pid: int, sig: int = signal.SIGTERM):
-    """Recursively kill a process and all its descendants."""
-    # Collect children before killing the parent (dead processes have no children)
-    try:
-        result = subprocess.run(
-            ["pgrep", "-P", str(pid)], capture_output=True, text=True,
-        )
-        child_pids = [int(p) for p in result.stdout.split() if p.strip()]
-    except (OSError, ValueError):
-        child_pids = []
-
-    for cpid in child_pids:
-        _kill_tree(cpid, sig)
-
-    try:
-        os.kill(pid, sig)
-    except OSError:
-        pass
-
-
 def cancel_current_job() -> str | None:
-    """Kill the current process_ticket subprocess and all its descendants. Returns the issue key or None."""
+    """Kill the current process_ticket subprocess. Returns the issue key or None."""
     with _proc_lock:
         proc = _current_proc
         key = _current_issue_key
     if proc is None or key is None:
         return None
-    _kill_tree(proc.pid, signal.SIGTERM)
     try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        _kill_tree(proc.pid, signal.SIGKILL)
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
     except OSError:
         pass
     return key
@@ -96,7 +76,6 @@ def worker():
             proc = subprocess.Popen(
                 ["python3", "scripts/process_ticket.py", issue_key],
                 cwd=PROJECT_ROOT,
-                start_new_session=True,
             )
             with _proc_lock:
                 _current_proc = proc
