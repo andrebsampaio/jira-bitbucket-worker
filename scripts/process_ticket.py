@@ -194,11 +194,126 @@ def load_run_manifest(issue_key: str) -> dict | None:
     return data
 
 
+def _git_text(args: list[str], cwd: str) -> str:
+    r = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0:
+        return ""
+    return r.stdout
+
+
+def _current_branch(repo_root: str) -> str | None:
+    name = _git_text(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root).strip()
+    if not name or name == "HEAD":
+        return None
+    return name
+
+
+def _branch_exists_on_origin(repo_root: str, branch: str) -> bool:
+    out = _git_text(["git", "ls-remote", "--heads", "origin", branch], repo_root).strip()
+    return bool(out)
+
+
+def _iter_git_repo_roots(workspace: str):
+    """Yield top-level git worktrees/clones under workspace (does not descend into nested repos)."""
+    workspace = os.path.abspath(workspace)
+    if not os.path.isdir(workspace):
+        return
+    for root, dirs, _files in os.walk(workspace):
+        if ".git" in dirs:
+            dirs.remove(".git")
+        git_marker = os.path.join(root, ".git")
+        if os.path.isdir(git_marker) or os.path.isfile(git_marker):
+            yield root
+            dirs.clear()
+
+
+def _branches_containing_ticket(repo_root: str, issue_key: str) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+    for ref in ("refs/heads/", "refs/remotes/origin/"):
+        out = _git_text(
+            ["git", "for-each-ref", "--format=%(refname:short)", ref],
+            repo_root,
+        )
+        for line in out.splitlines():
+            short = line.strip()
+            if issue_key not in short:
+                continue
+            if short.startswith("origin/"):
+                short = short[len("origin/") :]
+            if not short or short == "HEAD":
+                continue
+            if short not in seen:
+                seen.add(short)
+                found.append(short)
+    return found
+
+
+def infer_run_from_git(issue_key: str) -> dict | None:
+    """
+    When Codex omits the manifest, find repo + branch by scanning for branches whose name
+    contains the issue key (e.g. feature/WEB-5865-description).
+    """
+    base = os.path.abspath(WORKSPACE_PATH)
+    triples: list[tuple[str, str, str]] = []  # (repo_path_rel, branch, repo_root_abs)
+    for repo_root in _iter_git_repo_roots(base):
+        rel = os.path.relpath(repo_root, base)
+        if rel == ".":
+            rel = "."
+        for branch in _branches_containing_ticket(repo_root, issue_key):
+            triples.append((rel, branch, repo_root))
+
+    if not triples:
+        return None
+
+    uniq: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for rel, br, root in triples:
+        key = (rel, br)
+        if key not in seen:
+            seen.add(key)
+            uniq.append((rel, br, root))
+
+    def pick() -> tuple[str, str, str] | None:
+        if len(uniq) == 1:
+            return uniq[0]
+        # Prefer the checkout whose HEAD is a branch containing the ticket key.
+        for rel, br, root in uniq:
+            head = _current_branch(root)
+            if head and issue_key in head:
+                return (rel, head, root)
+        # Prefer a unique branch that exists on origin (pushed).
+        pushed = [(rel, br, root) for rel, br, root in uniq if _branch_exists_on_origin(root, br)]
+        if len(pushed) == 1:
+            return pushed[0]
+        return None
+
+    chosen = pick()
+    if not chosen:
+        summary = [(u[0], u[1]) for u in uniq]
+        print(
+            f"[process] Could not infer repo/branch for {issue_key} (ambiguous): {summary!r}. "
+            f"Create {RUN_MANIFEST_NAME} or leave only one matching branch.",
+            file=sys.stderr,
+        )
+        return None
+
+    rel, br, _root = chosen
+    print(
+        f"[process] No manifest; inferred repo_path={rel!r} branch={br!r} from git.",
+        file=sys.stderr,
+    )
+    return {"issue_key": issue_key, "repo_path": rel, "branch": br}
+
+
 def create_pr_after_codex(issue: dict, issue_key: str) -> None:
     manifest = load_run_manifest(issue_key)
     if not manifest:
+        manifest = infer_run_from_git(issue_key)
+    if not manifest:
         print(
-            f"[process] No valid {RUN_MANIFEST_NAME} found; open the PR manually if needed.",
+            f"[process] No {RUN_MANIFEST_NAME} and could not infer repo/branch; "
+            "open the PR manually if needed.",
             file=sys.stderr,
         )
         return
