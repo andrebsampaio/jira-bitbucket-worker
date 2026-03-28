@@ -144,9 +144,10 @@ def create_worktree(repo_dir: str, source_branch: str, pr_id: str) -> str:
     # Fetch latest from remote
     subprocess.run(["git", "fetch", "origin"], cwd=repo_dir, check=True)
 
-    # Create worktree from the remote branch
+    # Create worktree with a local branch tracking the remote (avoids detached HEAD)
+    local_branch = f"pr-fix-{pr_id}-{os.urandom(3).hex()}"
     subprocess.run(
-        ["git", "worktree", "add", worktree_path, f"origin/{source_branch}"],
+        ["git", "worktree", "add", "-b", local_branch, worktree_path, f"origin/{source_branch}"],
         cwd=repo_dir,
         check=True,
     )
