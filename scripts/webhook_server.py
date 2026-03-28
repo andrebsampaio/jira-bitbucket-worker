@@ -61,7 +61,9 @@ def verify_signature(body: bytes, signature_header: str) -> bool:
     if not WEBHOOK_SECRET:
         return True
     expected = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature_header)
+    # Jira sends the raw hex digest; GitHub prefixes with "sha256="
+    sig = signature_header.removeprefix("sha256=")
+    return hmac.compare_digest(expected, sig)
 
 
 def worker():
