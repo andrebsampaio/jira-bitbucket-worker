@@ -115,7 +115,7 @@ def main():
     print(f"[process] Prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
 
     subprocess.run(
-        ["codex", "exec", prompt],
+        ["codex", "exec", "--skip-git-repo-check", prompt],
         cwd=WORKSPACE_PATH,
         check=True,
     )
