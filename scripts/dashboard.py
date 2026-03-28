@@ -125,7 +125,15 @@ def _api_webhook_health(handler):
 
 
 def _api_cancel(handler):
-    from scripts.webhook_server import cancel_current_job
+    import sys
+    # The server runs as __main__, so importing scripts.webhook_server would
+    # create a separate module with its own globals (where _current_proc is
+    # always None).  Reach into the actual running module instead.
+    main_mod = sys.modules.get("__main__")
+    cancel_current_job = getattr(main_mod, "cancel_current_job", None)
+    if cancel_current_job is None:
+        _send_json(handler, {"cancelled": False, "error": "Cancel not available"})
+        return
     issue_key = cancel_current_job()
     if issue_key:
         _send_json(handler, {"cancelled": True, "issue_key": issue_key})
