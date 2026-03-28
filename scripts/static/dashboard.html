@@ -142,6 +142,28 @@
   .health-item .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .health-item .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
 
+  /* Log viewer panel */
+  .log-panel {
+    display: none; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; margin-top: 12px; overflow: hidden;
+  }
+  .log-panel.active { display: block; }
+  .log-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; background: var(--surface2); font-size: 13px; font-weight: 600;
+  }
+  .log-panel-close { cursor: pointer; color: var(--text-muted); font-size: 16px; }
+  .log-panel-close:hover { color: var(--text); }
+  .log-panel-body {
+    max-height: 400px; overflow-y: auto; padding: 12px 14px;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
+    line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    color: var(--text-muted);
+  }
+  .log-panel-body .log-new { color: var(--text); }
+  .timeline-item { cursor: pointer; }
+  .timeline-item:hover { background: var(--surface2); border-radius: 4px; }
+
   .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px; }
 
   @media (max-width: 900px) {
@@ -221,6 +243,13 @@
     <div class="card-header">Ticket Processing Timeline</div>
     <div class="card-body">
       <div id="timeline"></div>
+      <div class="log-panel" id="log-panel">
+        <div class="log-panel-header">
+          <span>Codex Output — <span id="log-panel-key"></span></span>
+          <span class="log-panel-close" onclick="closeLogPanel()">&times;</span>
+        </div>
+        <div class="log-panel-body" id="log-panel-body"></div>
+      </div>
     </div>
   </div>
 
@@ -361,13 +390,64 @@ function renderTimeline(data) {
   }
   el.innerHTML = data.map(t => {
     const dur = t.finished_at && t.started_at ? t.finished_at - t.started_at : null;
-    return `<div class="timeline-item">
+    return `<div class="timeline-item" onclick="openLogPanel('${t.issue_key}')">
       <span class="timeline-key">${t.issue_key}</span>
       ${badge(t.status)}
       <span class="timeline-summary">${t.summary || ''}</span>
       <span class="timeline-duration">${dur ? fmtDuration(dur) : (t.started_at ? 'In progress...' : '-')}</span>
     </div>`;
   }).join('');
+}
+
+// -- Log panel --
+let logPanelKey = null;
+let logPanelLastId = 0;
+let logPollTimer = null;
+
+async function openLogPanel(issueKey) {
+  const panel = $('log-panel');
+  const body = $('log-panel-body');
+  $('log-panel-key').textContent = issueKey;
+  logPanelKey = issueKey;
+  logPanelLastId = 0;
+  body.textContent = 'Loading...';
+  panel.classList.add('active');
+
+  await fetchLogLines();
+  // Start polling for live updates
+  clearInterval(logPollTimer);
+  logPollTimer = setInterval(fetchLogLines, 2000);
+}
+
+function closeLogPanel() {
+  $('log-panel').classList.remove('active');
+  logPanelKey = null;
+  clearInterval(logPollTimer);
+}
+
+async function fetchLogLines() {
+  if (!logPanelKey) return;
+  try {
+    const lines = await fetchJSON(`/api/logs/${logPanelKey}?since_id=${logPanelLastId}`);
+    const body = $('log-panel-body');
+    if (logPanelLastId === 0) {
+      body.textContent = '';
+      if (!lines.length) {
+        body.textContent = 'No log output yet.';
+        return;
+      }
+    }
+    for (const entry of lines) {
+      const span = document.createElement('span');
+      span.className = 'log-new';
+      span.textContent = entry.line + '\n';
+      body.appendChild(span);
+      logPanelLastId = entry.id;
+    }
+    if (lines.length) {
+      body.scrollTop = body.scrollHeight;
+    }
+  } catch (e) {}
 }
 
 function renderActivityLog(data) {
@@ -466,6 +546,19 @@ function connectSSE() {
   // On any event, do a full refresh (simple and reliable)
   ['ticket_update', 'pr_created', 'event'].forEach(evt => {
     es.addEventListener(evt, () => refresh());
+  });
+  // Stream log lines directly into the panel
+  es.addEventListener('log_line', (e) => {
+    const data = JSON.parse(e.data);
+    if (logPanelKey && data.issue_key === logPanelKey) {
+      const body = $('log-panel-body');
+      if (body.textContent === 'No log output yet.') body.textContent = '';
+      const span = document.createElement('span');
+      span.className = 'log-new';
+      span.textContent = data.line + '\n';
+      body.appendChild(span);
+      body.scrollTop = body.scrollHeight;
+    }
   });
 }
 

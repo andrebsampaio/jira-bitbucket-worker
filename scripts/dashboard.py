@@ -34,6 +34,12 @@ def handle_dashboard_request(handler) -> bool:
     if route_fn:
         route_fn(handler)
         return True
+
+    # Dynamic routes
+    if path.startswith("/api/logs/"):
+        _api_logs(handler, path[len("/api/logs/"):])
+        return True
+
     return False
 
 
@@ -86,6 +92,19 @@ def _api_errors(handler):
 
 def _api_stats(handler):
     _send_json(handler, db.get_stats())
+
+
+def _api_logs(handler, issue_key: str):
+    """Return log lines for a ticket. Supports ?since_id=N for incremental fetches."""
+    query = handler.path.split("?", 1)[1] if "?" in handler.path else ""
+    since_id = 0
+    for param in query.split("&"):
+        if param.startswith("since_id="):
+            try:
+                since_id = int(param.split("=", 1)[1])
+            except ValueError:
+                pass
+    _send_json(handler, db.get_ticket_logs(issue_key, since_id))
 
 
 def _api_webhook_health(handler):

@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     created_at   REAL
 );
 
+CREATE TABLE IF NOT EXISTS ticket_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_key  TEXT NOT NULL,
+    ts         REAL NOT NULL,
+    stream     TEXT NOT NULL DEFAULT 'stdout',
+    line       TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS webhook_health (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     last_received   REAL,
@@ -175,6 +183,32 @@ def _log_event(issue_key: str | None, event_type: str, detail: str = ""):
 def log_event(issue_key: str | None, event_type: str, detail: str = ""):
     _log_event(issue_key, event_type, detail)
     _notify("event", {"issue_key": issue_key, "event_type": event_type, "detail": detail})
+
+
+# -- Ticket logs --------------------------------------------------------------
+
+def log_line(issue_key: str, line: str, stream: str = "stdout"):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO ticket_logs (issue_key, ts, stream, line) VALUES (?, ?, ?, ?)",
+            (issue_key, now, stream, line),
+        )
+    _notify("log_line", {"issue_key": issue_key, "ts": now, "stream": stream, "line": line})
+
+
+def get_ticket_logs(issue_key: str, since_id: int = 0) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM ticket_logs WHERE issue_key=? AND id>? ORDER BY id ASC",
+            (issue_key, since_id),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def clear_ticket_logs(issue_key: str):
+    with _connect() as conn:
+        conn.execute("DELETE FROM ticket_logs WHERE issue_key=?", (issue_key,))
 
 
 # -- Webhook health -----------------------------------------------------------

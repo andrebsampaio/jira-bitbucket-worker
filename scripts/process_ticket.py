@@ -414,12 +414,23 @@ def main():
     print(f"[process] Prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
 
     db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
+    db.clear_ticket_logs(issue_key)
 
-    subprocess.run(
+    proc = subprocess.Popen(
         ["codex", "exec", "--skip-git-repo-check", prompt],
         cwd=WORKSPACE_PATH,
-        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        print(f"[codex] {line}")
+        db.log_line(issue_key, line)
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, "codex")
     print(f"[process] codex finished for {issue_key}")
 
     # Load worktree info from manifest or infer from filesystem
