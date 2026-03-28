@@ -197,7 +197,7 @@ Line: {line}
 Diff:
 {diff}
 
-Apply the requested fix. Make a single focused commit with a clear message referencing the PR comment.""".strip()
+Apply the requested fix. Do NOT run git commit — just make the file changes. The commit and push will be handled externally.""".strip()
 
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,

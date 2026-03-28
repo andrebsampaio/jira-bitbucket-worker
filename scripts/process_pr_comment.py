@@ -274,8 +274,25 @@ def main():
             raise subprocess.CalledProcessError(proc.returncode, "codex")
         print(f"[pr-comment] Codex finished for {issue_key}")
 
+        # Commit the changes codex made (sandbox blocks git inside codex)
+        db.ticket_phase(issue_key, "pushing", f"Committing and pushing fix for {issue_key}")
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        if not status.stdout.strip():
+            raise RuntimeError("Codex made no file changes")
+
+        subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"fix: address PR review comment (#{comment_id})"],
+            cwd=worktree_path,
+            check=True,
+        )
+
         # Push the fix to the source branch
-        db.ticket_phase(issue_key, "pushing", f"Pushing fix for {issue_key}")
         subprocess.run(
             ["git", "push", "origin", f"HEAD:{source_branch}"],
             cwd=worktree_path,
