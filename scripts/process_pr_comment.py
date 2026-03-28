@@ -250,7 +250,7 @@ def main():
         db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
         db.clear_ticket_logs(issue_key)
 
-        cmd = ["codex", "exec", "--skip-git-repo-check"]
+        cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
         model = db.get_setting("model", "")
         if model:
             cmd += ["-m", model]
