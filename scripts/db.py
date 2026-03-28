@@ -262,7 +262,7 @@ def get_worker_status() -> dict:
     """Return current processing state."""
     with _connect() as conn:
         processing = conn.execute(
-            "SELECT * FROM tickets WHERE status='processing' ORDER BY started_at DESC LIMIT 1"
+            "SELECT * FROM tickets WHERE status NOT IN ('queued','done','failed','cancelled') ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
         queue_size = conn.execute(
             "SELECT COUNT(*) as cnt FROM tickets WHERE status='queued'"
