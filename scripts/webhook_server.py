@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import queue
+import signal
 import subprocess
 import threading
 import traceback
@@ -40,18 +41,19 @@ _proc_lock = threading.Lock()
 
 
 def cancel_current_job() -> str | None:
-    """Kill the current process_ticket subprocess. Returns the issue key or None."""
+    """Kill the current process_ticket subprocess and all its children. Returns the issue key or None."""
     with _proc_lock:
         proc = _current_proc
         key = _current_issue_key
     if proc is None or key is None:
         return None
     try:
-        proc.terminate()
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(pgid, signal.SIGKILL)
     except OSError:
         pass
     return key
@@ -76,6 +78,7 @@ def worker():
             proc = subprocess.Popen(
                 ["python3", "scripts/process_ticket.py", issue_key],
                 cwd=PROJECT_ROOT,
+                start_new_session=True,
             )
             with _proc_lock:
                 _current_proc = proc
