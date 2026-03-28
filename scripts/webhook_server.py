@@ -40,20 +40,38 @@ _current_issue_key: str | None = None
 _proc_lock = threading.Lock()
 
 
+def _kill_tree(pid: int, sig: int = signal.SIGTERM):
+    """Recursively kill a process and all its descendants."""
+    # Collect children before killing the parent (dead processes have no children)
+    try:
+        result = subprocess.run(
+            ["pgrep", "-P", str(pid)], capture_output=True, text=True,
+        )
+        child_pids = [int(p) for p in result.stdout.split() if p.strip()]
+    except (OSError, ValueError):
+        child_pids = []
+
+    for cpid in child_pids:
+        _kill_tree(cpid, sig)
+
+    try:
+        os.kill(pid, sig)
+    except OSError:
+        pass
+
+
 def cancel_current_job() -> str | None:
-    """Kill the current process_ticket subprocess and all its children. Returns the issue key or None."""
+    """Kill the current process_ticket subprocess and all its descendants. Returns the issue key or None."""
     with _proc_lock:
         proc = _current_proc
         key = _current_issue_key
     if proc is None or key is None:
         return None
+    _kill_tree(proc.pid, signal.SIGTERM)
     try:
-        pgid = os.getpgid(proc.pid)
-        os.killpg(pgid, signal.SIGTERM)
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            os.killpg(pgid, signal.SIGKILL)
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc.pid, signal.SIGKILL)
     except OSError:
         pass
     return key
