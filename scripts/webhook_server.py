@@ -11,7 +11,7 @@ import os
 import queue
 import subprocess
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 from dotenv import load_dotenv
 
@@ -125,6 +125,6 @@ if __name__ == "__main__":
     worker_thread = threading.Thread(target=worker, daemon=True)
     worker_thread.start()
 
-    server = HTTPServer(("0.0.0.0", WEBHOOK_PORT), JiraWebhookHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", WEBHOOK_PORT), JiraWebhookHandler)
     print(f"[webhook] Listening on port {WEBHOOK_PORT}")
     server.serve_forever()
