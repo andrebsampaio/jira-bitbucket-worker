@@ -117,6 +117,8 @@ class JiraWebhookHandler(BaseHTTPRequestHandler):
         db.webhook_received()
 
         signature = self.headers.get("X-Hub-Signature-256", "")
+        print(f"[webhook] Signature header (X-Hub-Signature-256): {signature!r}")
+        print(f"[webhook] All headers: {dict(self.headers)}")
         if WEBHOOK_SECRET and not verify_signature(body, signature):
             db.webhook_sig_failure()
             db.log_event(None, "sig_failure", "Webhook signature validation failed")
