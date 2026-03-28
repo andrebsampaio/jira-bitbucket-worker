@@ -136,6 +136,12 @@ class JiraWebhookHandler(BaseHTTPRequestHandler):
 
         threading.Thread(target=handle_event, args=(payload,), daemon=True).start()
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionResetError:
+            pass
+
     def log_message(self, format, *args):
         print(f"[webhook] {self.address_string()} - {format % args}")
 
