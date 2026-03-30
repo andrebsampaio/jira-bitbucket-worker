@@ -1,831 +1,1421 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JIRA Bitbucket Worker - Dashboard</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Worker Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface2: #232733;
-    --border: #2e3345;
-    --text: #e1e4ed;
-    --text-muted: #8b8fa3;
-    --accent: #6c8cff;
-    --green: #34d399;
-    --red: #f87171;
-    --yellow: #fbbf24;
-    --orange: #fb923c;
-    --purple: #a78bfa;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg); color: var(--text);
-    line-height: 1.5; padding: 24px;
-  }
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
-  }
-  header h1 { font-size: 20px; font-weight: 600; }
-  .connection-status {
-    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);
-  }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .dot.connected { background: var(--green); }
-  .dot.disconnected { background: var(--red); }
+/* ── RESET & VARS ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* Grid layout */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .grid .full { grid-column: 1 / -1; }
+:root {
+  --bg:          #08080c;
+  --surface:     #0f0f16;
+  --surface-2:   #161620;
+  --border:      #1e1e2a;
+  --border-hi:   #28283a;
 
-  /* Cards */
-  .card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden;
-  }
-  .card-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-bottom: 1px solid var(--border);
-    font-size: 13px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--text-muted);
-  }
-  .card-body { padding: 18px; }
+  --text:        #ddddf0;
+  --text-2:      #8585a0;
+  --text-3:      #44445a;
 
-  /* Stats row */
-  .stats-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
-  .stat-box {
-    background: var(--surface2); border-radius: 8px; padding: 14px;
-    text-align: center;
-  }
-  .stat-box .value { font-size: 28px; font-weight: 700; color: var(--accent); }
-  .stat-box .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  --amber:       #f59e0b;
+  --amber-dim:   rgba(245,158,11,.12);
+  --amber-line:  rgba(245,158,11,.22);
 
-  /* Worker status */
-  .worker-status { display: flex; align-items: center; gap: 16px; }
-  .worker-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
-    border-radius: 20px; font-size: 13px; font-weight: 600;
-  }
-  .worker-badge.idle { background: rgba(52,211,153,0.15); color: var(--green); }
-  .worker-badge.busy { background: rgba(108,140,255,0.15); color: var(--accent); }
-  .worker-current { font-size: 14px; }
-  .worker-current .key { font-weight: 600; color: var(--accent); }
+  --green:       #10b981;
+  --green-dim:   rgba(16,185,129,.1);
+  --green-line:  rgba(16,185,129,.22);
 
-  /* Timeline */
-  .timeline-item {
-    display: grid; grid-template-columns: 100px 120px 1fr auto;
-    gap: 12px; align-items: center; padding: 10px 0;
-    border-bottom: 1px solid var(--border); font-size: 13px;
-  }
-  .timeline-item:last-child { border-bottom: none; }
-  .timeline-key { font-weight: 600; color: var(--accent); }
-  .timeline-summary { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .timeline-duration { color: var(--text-muted); font-size: 12px; text-align: right; }
+  --red:         #f87171;
+  --red-dim:     rgba(248,113,113,.1);
+  --red-line:    rgba(248,113,113,.22);
 
-  /* Status badges */
-  .badge {
-    display: inline-block; padding: 2px 10px; border-radius: 12px;
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-  }
-  .badge-queued { background: rgba(251,191,36,0.15); color: var(--yellow); }
-  .badge-processing { background: rgba(108,140,255,0.15); color: var(--accent); }
-  .badge-codex-running { background: rgba(167,139,250,0.15); color: var(--purple); }
-  .badge-pushing { background: rgba(251,146,60,0.15); color: var(--orange); }
-  .badge-creating-pr { background: rgba(251,146,60,0.15); color: var(--orange); }
-  .badge-done { background: rgba(52,211,153,0.15); color: var(--green); }
-  .badge-failed { background: rgba(248,113,113,0.15); color: var(--red); }
-  .badge-review { background: rgba(167,139,250,0.15); color: var(--purple); }
-  .badge-open { background: rgba(108,140,255,0.15); color: var(--accent); }
-  .badge-merged { background: rgba(52,211,153,0.15); color: var(--green); }
-  .badge-declined { background: rgba(248,113,113,0.15); color: var(--red); }
-  .badge-cancelled { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  --blue:        #818cf8;
+  --blue-dim:    rgba(129,140,248,.1);
+  --blue-line:   rgba(129,140,248,.22);
 
-  /* Cancel button */
-  .btn-cancel {
-    padding: 4px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
-    cursor: pointer; border: 1px solid var(--red); background: none; color: var(--red);
-    transition: all 0.15s; margin-left: 12px;
-  }
-  .btn-cancel:hover { background: rgba(248,113,113,0.15); }
-  .btn-cancel:disabled { opacity: 0.4; cursor: not-allowed; }
+  --purple:      #c084fc;
 
-  /* Activity log */
-  .log-scroll { max-height: 340px; overflow-y: auto; }
-  .log-entry {
-    display: grid; grid-template-columns: 70px 80px 1fr;
-    gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border);
-    font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
-  }
-  .log-entry:last-child { border-bottom: none; }
-  .log-time { color: var(--text-muted); }
-  .log-type { font-weight: 600; }
-  .log-detail { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  --term-bg:     #050509;
+  --term-text:   #c4c4dc;
+  --term-muted:  #3c3c52;
+  --term-err:    #f87171;
 
-  /* PR list */
-  .pr-item {
-    display: grid; grid-template-columns: 90px 1fr auto auto;
-    gap: 12px; align-items: center; padding: 10px 0;
-    border-bottom: 1px solid var(--border); font-size: 13px;
-  }
-  .pr-item:last-child { border-bottom: none; }
-  .pr-link { color: var(--accent); text-decoration: none; }
-  .pr-link:hover { text-decoration: underline; }
-  .pr-repo { color: var(--text-muted); font-size: 12px; }
+  --ui:   'Plus Jakarta Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* Error panel */
-  .error-item {
-    background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.2);
-    border-radius: 8px; padding: 12px; margin-bottom: 10px;
-  }
-  .error-item:last-child { margin-bottom: 0; }
-  .error-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
-  .error-key { font-weight: 600; color: var(--red); }
-  .error-time { font-size: 12px; color: var(--text-muted); }
-  .error-msg { font-size: 12px; color: var(--text-muted); font-family: monospace; white-space: pre-wrap; word-break: break-all; }
+  --r: 7px;
+  --r2: 11px;
+  --r3: 14px;
+}
 
-  /* Webhook health */
-  .health-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  .health-item { background: var(--surface2); border-radius: 8px; padding: 12px; }
-  .health-item .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .health-item .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+html { font-size: 14px; }
+body {
+  font-family: var(--ui);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
 
-  /* Log viewer panel */
-  .log-panel {
-    display: none; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; margin-top: 12px; overflow: hidden;
-  }
-  .log-panel.active { display: block; }
-  .log-panel-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; background: var(--surface2); font-size: 13px; font-weight: 600;
-  }
-  .log-panel-close { cursor: pointer; color: var(--text-muted); font-size: 16px; }
-  .log-panel-close:hover { color: var(--text); }
-  .log-panel-body {
-    max-height: 400px; overflow-y: auto; padding: 12px 14px;
-    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px;
-    line-height: 1.6; white-space: pre-wrap; word-break: break-all;
-    color: var(--text-muted);
-  }
-  .log-panel-body .log-new { color: var(--text); }
-  .timeline-item { cursor: pointer; }
-  .timeline-item:hover { background: var(--surface2); border-radius: 4px; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: var(--ui); cursor: pointer; border: none; outline: none; background: none; }
 
-  .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px; }
+/* ── HEADER ─────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  height: 50px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  gap: 6px;
+}
 
-  /* Navigation tabs */
-  .nav-tabs {
-    display: flex; gap: 4px;
-  }
-  .nav-tab {
-    padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 500;
-    cursor: pointer; color: var(--text-muted); background: none; border: none;
-    transition: all 0.15s;
-  }
-  .nav-tab:hover { color: var(--text); background: var(--surface2); }
-  .nav-tab.active { color: var(--accent); background: rgba(108,140,255,0.12); }
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 24px;
+}
 
-  /* Settings page */
-  .settings-page { display: none; }
-  .settings-page.active { display: block; }
-  .dashboard-page.active { display: block; }
-  .dashboard-page { display: none; }
+.logo-mark {
+  width: 24px;
+  height: 24px;
+  background: var(--amber);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
 
-  .setting-group {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; margin-bottom: 16px; overflow: hidden;
-  }
-  .setting-group-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-bottom: 1px solid var(--border);
-    font-size: 13px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--text-muted);
-  }
-  .setting-group-body { padding: 18px; }
-  .setting-label {
-    font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px;
-  }
-  .setting-hint {
-    font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.5;
-  }
-  .setting-textarea {
-    width: 100%; min-height: 200px; padding: 12px; border-radius: 8px;
-    border: 1px solid var(--border); background: var(--bg); color: var(--text);
-    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
-    line-height: 1.6; resize: vertical; outline: none;
-  }
-  .setting-textarea:focus { border-color: var(--accent); }
-  .setting-actions {
-    display: flex; gap: 10px; align-items: center; margin-top: 16px;
-  }
-  .btn {
-    padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600;
-    cursor: pointer; border: 1px solid var(--border); transition: all 0.15s;
-  }
-  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary:hover { opacity: 0.9; }
-  .btn-secondary { background: var(--surface2); color: var(--text); }
-  .btn-secondary:hover { background: var(--border); }
-  .btn-danger { background: none; color: var(--red); border-color: var(--red); }
-  .btn-danger:hover { background: rgba(248,113,113,0.1); }
-  .save-status {
-    font-size: 13px; color: var(--green); opacity: 0; transition: opacity 0.3s;
-  }
-  .save-status.visible { opacity: 1; }
-  .placeholders {
-    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
-  }
-  .placeholder-tag {
-    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    background: rgba(108,140,255,0.1); color: var(--accent); cursor: pointer;
-  }
-  .placeholder-tag:hover { background: rgba(108,140,255,0.2); }
+.logo-mark svg { width: 13px; height: 13px; fill: #000; }
 
-  @media (max-width: 900px) {
-    .grid { grid-template-columns: 1fr; }
-    .stats-row { grid-template-columns: repeat(3, 1fr); }
-    .timeline-item { grid-template-columns: 80px 90px 1fr; }
-    .timeline-duration { display: none; }
-  }
+.logo-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -.3px;
+}
+
+.nav-btn {
+  padding: 5px 11px;
+  border-radius: var(--r);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: color .15s, background .15s;
+}
+.nav-btn:hover { color: var(--text); background: var(--surface-2); }
+.nav-btn.active { color: var(--text); background: var(--surface-2); }
+
+.header-spacer { flex: 1; }
+
+.conn-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: background .3s, box-shadow .3s;
+}
+.conn-dot.live  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.conn-dot.error { background: var(--red); }
+
+/* ── PAGE SYSTEM ────────────────────────────────────────────── */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── DASHBOARD LAYOUT ───────────────────────────────────────── */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  min-height: calc(100vh - 50px);
+}
+
+.col-main {
+  padding: 18px 20px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: calc(100vh - 50px);
+}
+
+.col-side {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── CARDS ──────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ── ACTIVE JOB CARD ────────────────────────────────────────── */
+.job-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  overflow: hidden;
+  transition: border-color .4s, box-shadow .4s;
+  min-height: 400px;
+}
+
+.job-card.running {
+  border-color: var(--amber-line);
+  animation: card-breathe 4s ease-in-out infinite;
+}
+
+@keyframes card-breathe {
+  0%,100% { box-shadow: 0 0 30px rgba(245,158,11,.03), inset 0 0 60px rgba(245,158,11,.015); }
+  50%     { box-shadow: 0 0 60px rgba(245,158,11,.07), inset 0 0 80px rgba(245,158,11,.03); }
+}
+
+/* Idle state */
+.job-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-3);
+  padding: 40px;
+}
+
+.idle-indicator {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.idle-ring {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.idle-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 3px;
+  font-family: var(--mono);
+}
+
+/* Running job header */
+.job-run-head {
+  padding: 14px 16px;
+  background: rgba(245,158,11,.02);
+  border-bottom: 1px solid var(--amber-line);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.job-identity { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+.job-key-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Pulsing amber dot */
+.pulse-wrap {
+  position: relative;
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+}
+.pulse-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.pulse-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--amber);
+  opacity: 0;
+  animation: pulse 2.2s ease-out infinite;
+}
+@keyframes pulse {
+  0%   { transform: scale(.4); opacity: .9; }
+  80%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+.job-key-text {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--amber);
+  letter-spacing: .02em;
+}
+
+.phase-badge {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+
+.ph-processing    { background: var(--amber-dim); color: var(--amber);  border-color: var(--amber-line); }
+.ph-codex-running { background: var(--blue-dim);  color: var(--blue);   border-color: var(--blue-line); }
+.ph-pushing       { background: rgba(192,132,252,.1); color: var(--purple); border-color: rgba(192,132,252,.25); }
+.ph-creating-pr   { background: var(--green-dim); color: var(--green);  border-color: var(--green-line); }
+.ph-queued        { background: var(--surface-2); color: var(--text-2); border-color: var(--border-hi); }
+
+.job-summary {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 540px;
+}
+
+.job-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.job-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.job-elapsed {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--amber);
+  letter-spacing: -.01em;
+}
+
+.btn-cancel {
+  padding: 5px 12px;
+  border-radius: var(--r);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid var(--red-line);
+  transition: background .15s, opacity .15s;
+}
+.btn-cancel:hover  { background: rgba(248,113,113,.18); }
+.btn-cancel:active { opacity: .7; }
+
+/* Terminal */
+.term-wrap {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: var(--term-bg);
+  min-height: 200px;
+}
+
+/* Scanline texture */
+.term-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom, transparent, transparent 2px,
+    rgba(0,0,0,.04) 2px, rgba(0,0,0,.04) 4px
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+.term-fade {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 52px;
+  background: linear-gradient(to bottom, var(--term-bg), transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.term {
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 16px 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--term-text);
+  position: relative;
+  z-index: 1;
+}
+
+.term::-webkit-scrollbar { width: 4px; }
+.term::-webkit-scrollbar-track { background: transparent; }
+.term::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+.log-row { display: flex; gap: 12px; }
+.log-ts  { color: var(--term-muted); flex-shrink: 0; font-size: 10.5px; padding-top: 2px; user-select: none; }
+.log-txt { flex: 1; word-break: break-all; white-space: pre-wrap; }
+.log-row.err .log-txt { color: var(--term-err); }
+
+.term-placeholder {
+  color: var(--term-muted);
+  font-style: italic;
+}
+
+/* ── QUEUE PANEL ────────────────────────────────────────────── */
+.queue-empty { padding: 18px 14px; font-size: 12px; color: var(--text-3); text-align: center; }
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.queue-item:last-child { border-bottom: none; }
+.queue-num  { font-family: var(--mono); font-size: 10px; color: var(--text-3); width: 14px; flex-shrink: 0; }
+.queue-key  { font-family: var(--mono); font-size: 11px; color: var(--blue); flex-shrink: 0; }
+.queue-sum  { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── STATS PANEL ────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.stat-box {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.stat-box:nth-child(even)      { border-right: none; }
+.stat-box:nth-last-child(-n+2) { border-bottom: none; }
+
+.stat-lbl { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); margin-bottom: 2px; }
+.stat-val { font-family: var(--mono); font-size: 19px; font-weight: 500; color: var(--text); letter-spacing: -.02em; }
+.stat-val.good { color: var(--green); }
+.stat-val.warn { color: var(--amber); }
+.stat-val.bad  { color: var(--red); }
+
+/* ── WEBHOOK PANEL ──────────────────────────────────────────── */
+.wh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.wh-row:last-child { border-bottom: none; }
+.wh-lbl { color: var(--text-2); }
+.wh-val { font-family: var(--mono); color: var(--text); }
+
+/* ── TICKETS TABLE ──────────────────────────────────────────── */
+.section-row {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px 10px;
+}
+.section-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.t-table {
+  margin: 0 20px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+
+.t-head {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px 70px 80px;
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.th { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+
+.t-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 80px 70px 80px;
+  padding: 9px 14px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  cursor: pointer;
+  transition: background .1s;
+}
+.t-row:last-child { border-bottom: none; }
+.t-row:hover   { background: rgba(255,255,255,.02); }
+.t-row.open    { background: var(--surface-2); }
+
+.t-key  { font-family: var(--mono); font-size: 11.5px; color: var(--blue); }
+.t-sum  { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-dur  { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+.t-when { font-size: 12px; color: var(--text-3); }
+.t-pr   { font-size: 11.5px; }
+
+/* Inline log panel (historical tickets) */
+.inline-log {
+  grid-column: 1 / -1;
+  background: var(--term-bg);
+  border-top: 1px solid var(--border);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.inline-log .log-ts { color: var(--term-muted); margin-right: 10px; font-size: 10.5px; }
+.inline-log .err { color: var(--term-err); }
+
+/* ── BADGES ─────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid;
+}
+.b-done       { background: var(--green-dim); color: var(--green); border-color: var(--green-line); }
+.b-failed     { background: var(--red-dim);   color: var(--red);   border-color: var(--red-line); }
+.b-running    { background: var(--amber-dim); color: var(--amber); border-color: var(--amber-line); }
+.b-queued     { background: var(--surface-2); color: var(--text-2); border-color: var(--border-hi); }
+.b-cancelled  { background: var(--surface-2); color: var(--text-3); border-color: var(--border); }
+
+/* ── BOTTOM TABS ────────────────────────────────────────────── */
+.tabs-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin: 0 20px;
+}
+.tab-btn {
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--amber); }
+
+.tab-pane { display: none; padding: 14px 20px 28px; }
+.tab-pane.active { display: block; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+
+/* PRs */
+.pr-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 90px 80px 70px;
+  padding: 10px 14px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  font-size: 13px;
+}
+.pr-row:last-child { border-bottom: none; }
+.pr-id     { font-family: var(--mono); font-size: 11.5px; }
+.pr-branch { font-family: var(--mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo   { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-when   { font-size: 12px; color: var(--text-3); }
+
+/* Errors */
+.err-row { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.err-row:last-child { border-bottom: none; }
+.err-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+.err-sum  { font-size: 12px; color: var(--text-2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.err-when { font-size: 11.5px; color: var(--text-3); }
+.err-msg  { font-family: var(--mono); font-size: 11.5px; color: var(--red); line-height: 1.55; white-space: pre-wrap; word-break: break-all; margin-top: 2px; }
+
+/* Activity */
+.act-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.act-row:last-child { border-bottom: none; }
+.act-key  { font-family: var(--mono); font-size: 11px; color: var(--blue); flex-shrink: 0; width: 80px; }
+.act-txt  { flex: 1; color: var(--text-2); }
+.act-when { font-size: 11px; color: var(--text-3); flex-shrink: 0; }
+
+.empty { padding: 32px; text-align: center; font-size: 13px; color: var(--text-3); }
+
+/* ── SETTINGS PAGE ──────────────────────────────────────────── */
+#page-settings {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+
+.settings-group { margin-bottom: 30px; }
+
+.sg-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-row { margin-bottom: 16px; }
+
+.form-lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  letter-spacing: .03em;
+}
+.form-lbl em { font-weight: 400; font-style: normal; color: var(--text-3); margin-left: 5px; }
+
+.form-input, .form-select, .form-ta {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+  transition: border-color .15s;
+}
+.form-input:focus, .form-select:focus, .form-ta:focus { border-color: var(--border-hi); }
+
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b6b80' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  cursor: pointer;
+}
+
+.form-ta {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  resize: vertical;
+  min-height: 110px;
+}
+
+.ph-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.ph-tag {
+  padding: 2px 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--blue);
+  cursor: pointer;
+  transition: background .1s;
+}
+.ph-tag:hover { background: var(--blue-dim); }
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.btn-primary {
+  padding: 8px 18px;
+  border-radius: var(--r);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--amber);
+  color: #000;
+  transition: opacity .15s;
+}
+.btn-primary:hover { opacity: .85; }
+
+.btn-ghost {
+  padding: 8px 18px;
+  border-radius: var(--r);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  border: 1px solid var(--border-hi);
+  transition: background .15s, color .15s;
+}
+.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+
+.toast {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--green);
+}
+.toast.show { display: flex; animation: fade-toast 2.5s ease forwards; }
+@keyframes fade-toast { 0%,60%{opacity:1} 100%{opacity:0} }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .col-main  { border-right: none; min-height: auto; }
+  .col-side  { border-top: 1px solid var(--border); }
+  .t-head, .t-row { grid-template-columns: 90px 1fr 70px 60px; }
+  .t-head :last-child, .t-row :last-child { display: none; }
+  .pr-row { grid-template-columns: 90px 1fr 70px; }
+  .pr-row :nth-child(4), .pr-row :nth-child(5) { display: none; }
+}
 </style>
 </head>
 <body>
 
 <header>
-  <div style="display: flex; align-items: center; gap: 20px;">
-    <h1>JIRA Bitbucket Worker</h1>
-    <div class="nav-tabs">
-      <button class="nav-tab active" onclick="switchPage('dashboard')">Dashboard</button>
-      <button class="nav-tab" onclick="switchPage('settings')">Settings</button>
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
     </div>
+    <span class="logo-name">Worker</span>
   </div>
-  <div class="connection-status">
-    <span class="dot disconnected" id="sse-dot"></span>
-    <span id="sse-label">Connecting...</span>
-    <span style="margin-left: 12px; color: var(--text-muted);" id="uptime"></span>
+  <button class="nav-btn active" onclick="showPage('dashboard', this)">Dashboard</button>
+  <button class="nav-btn" onclick="showPage('settings', this)">Settings</button>
+  <div class="header-spacer"></div>
+  <div class="conn-pill">
+    <span class="conn-dot" id="conn-dot"></span>
+    <span id="conn-label">Connecting</span>
   </div>
 </header>
 
-<div class="dashboard-page active" id="page-dashboard">
+<!-- ══════════════════ DASHBOARD ══════════════════ -->
+<div class="page active" id="page-dashboard">
+  <div class="dash-grid">
 
-<!-- Section 6: Stats -->
-<div class="card" style="margin-bottom: 16px;">
-  <div class="card-header">Stats</div>
-  <div class="card-body">
-    <div class="stats-row" id="stats-row">
-      <div class="stat-box"><div class="value" id="stat-today">-</div><div class="label">Today</div></div>
-      <div class="stat-box"><div class="value" id="stat-week">-</div><div class="label">This Week</div></div>
-      <div class="stat-box"><div class="value" id="stat-total">-</div><div class="label">Total</div></div>
-      <div class="stat-box"><div class="value" id="stat-rate">-</div><div class="label">Success Rate</div></div>
-      <div class="stat-box"><div class="value" id="stat-avg">-</div><div class="label">Avg Duration</div></div>
-      <div class="stat-box"><div class="value" id="stat-prs">-</div><div class="label">PRs Created</div></div>
+    <!-- Main column -->
+    <div class="col-main">
+      <div class="job-card" id="job-card">
+        <div class="card-head">
+          <span class="card-label">Active Job</span>
+          <span id="job-card-sub" style="font-size:11.5px;color:var(--text-3);font-family:var(--mono)"></span>
+        </div>
+
+        <!-- Idle -->
+        <div class="job-idle" id="job-idle">
+          <div class="idle-indicator">
+            <span class="idle-ring"></span>
+            Idle — no job running
+          </div>
+          <div class="idle-sub" id="idle-uptime"></div>
+        </div>
+
+        <!-- Running -->
+        <div id="job-running" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+          <div class="job-run-head">
+            <div class="job-identity">
+              <div class="job-key-row">
+                <div class="pulse-wrap"></div>
+                <span class="job-key-text" id="job-key">—</span>
+                <span class="phase-badge" id="job-phase">processing</span>
+              </div>
+              <div class="job-summary" id="job-summary"></div>
+              <div class="job-chips" id="job-chips"></div>
+            </div>
+            <div class="job-controls">
+              <div class="job-elapsed" id="job-elapsed">0s</div>
+              <button class="btn-cancel" id="cancel-btn" onclick="cancelJob()">Cancel</button>
+            </div>
+          </div>
+          <div class="term-wrap">
+            <div class="term-fade"></div>
+            <div class="term" id="terminal">
+              <span class="term-placeholder">Waiting for output…</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Sidebar -->
+    <div class="col-side">
+
+      <!-- Queue -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-label">Queue</span>
+          <span id="queue-cnt" style="font-family:var(--mono);font-size:12px;color:var(--text-3)">0</span>
+        </div>
+        <div id="queue-body"><div class="queue-empty">Queue is empty</div></div>
+      </div>
+
+      <!-- Stats -->
+      <div class="card">
+        <div class="card-head"><span class="card-label">Stats</span></div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-lbl">Today</div><div class="stat-val" id="s-today">—</div></div>
+          <div class="stat-box"><div class="stat-lbl">This week</div><div class="stat-val" id="s-week">—</div></div>
+          <div class="stat-box"><div class="stat-lbl">Total</div><div class="stat-val" id="s-total">—</div></div>
+          <div class="stat-box"><div class="stat-lbl">Success</div><div class="stat-val" id="s-success">—</div></div>
+          <div class="stat-box"><div class="stat-lbl">Avg time</div><div class="stat-val" id="s-avg">—</div></div>
+          <div class="stat-box"><div class="stat-lbl">PRs</div><div class="stat-val" id="s-prs">—</div></div>
+        </div>
+      </div>
+
+      <!-- Webhook -->
+      <div class="card">
+        <div class="card-head"><span class="card-label">Webhook</span></div>
+        <div class="wh-row"><span class="wh-lbl">Last received</span><span class="wh-val" id="wh-last">—</span></div>
+        <div class="wh-row"><span class="wh-lbl">Total</span><span class="wh-val" id="wh-total">—</span></div>
+        <div class="wh-row"><span class="wh-lbl">Sig failures</span><span class="wh-val" id="wh-fail">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent tickets -->
+  <div class="section-row">
+    <span class="section-lbl">Recent Tickets</span>
+  </div>
+  <div class="t-table">
+    <div class="t-head">
+      <div class="th">Status</div>
+      <div class="th">Ticket</div>
+      <div class="th">Duration</div>
+      <div class="th">When</div>
+      <div class="th">PR</div>
+    </div>
+    <div id="tickets-body"><div class="empty">No tickets yet</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" onclick="switchTab('prs', this)">Pull Requests</button>
+    <button class="tab-btn" onclick="switchTab('errors', this)">Errors</button>
+    <button class="tab-btn" onclick="switchTab('activity', this)">Activity</button>
+  </div>
+
+  <div class="tab-pane active" id="tab-prs">
+    <div class="panel" id="prs-panel"><div class="empty">No pull requests yet</div></div>
+  </div>
+  <div class="tab-pane" id="tab-errors">
+    <div class="panel" id="errors-panel"><div class="empty">No errors — all good!</div></div>
+  </div>
+  <div class="tab-pane" id="tab-activity">
+    <div class="panel" id="activity-panel"><div class="empty">No activity yet</div></div>
   </div>
 </div>
 
-<div class="grid">
+<!-- ══════════════════ SETTINGS ══════════════════ -->
+<div class="page" id="page-settings">
+  <div id="settings-inner">
 
-  <!-- Section 1: Live Queue & Worker Status -->
-  <div class="card">
-    <div class="card-header">
-      Worker Status
-      <span class="worker-badge idle" id="worker-badge">Idle</span>
-    </div>
-    <div class="card-body">
-      <div id="worker-current" style="margin-bottom: 14px;"></div>
-      <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
-        Queue (<span id="queue-count">0</span> pending)
+    <div class="settings-group">
+      <div class="sg-title">Model Configuration</div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-model">Model <em>leave blank for default</em></label>
+        <input type="text" id="s-model" class="form-input" placeholder="e.g. claude-opus-4-5">
       </div>
-      <div id="queue-list"></div>
-    </div>
-  </div>
-
-  <!-- Webhook Health (nice-to-have, included in worker card area) -->
-  <div class="card">
-    <div class="card-header">Webhook Health</div>
-    <div class="card-body">
-      <div class="health-grid" id="health-grid">
-        <div class="health-item">
-          <div class="label">Last Received</div>
-          <div class="value" id="wh-last">-</div>
-        </div>
-        <div class="health-item">
-          <div class="label">Total Received</div>
-          <div class="value" id="wh-total">0</div>
-        </div>
-        <div class="health-item">
-          <div class="label">Sig Failures</div>
-          <div class="value" id="wh-failures" style="color: var(--green);">0</div>
-        </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-effort">Reasoning Effort</label>
+        <select id="s-effort" class="form-select">
+          <option value="none">None</option>
+          <option value="minimal">Minimal</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="xhigh">Extra High</option>
+        </select>
       </div>
     </div>
-  </div>
 
-  <!-- Section 2: Ticket Processing Timeline -->
-  <div class="card full">
-    <div class="card-header">Ticket Processing Timeline</div>
-    <div class="card-body">
-      <div id="timeline"></div>
-      <div class="log-panel" id="log-panel">
-        <div class="log-panel-header">
-          <span>Codex Output — <span id="log-panel-key"></span></span>
-          <span class="log-panel-close" onclick="closeLogPanel()">&times;</span>
+    <div class="settings-group">
+      <div class="sg-title">Prompt Templates</div>
+
+      <div class="form-row">
+        <label class="form-lbl" for="s-ctx">Context</label>
+        <textarea id="s-ctx" class="form-ta" rows="7"></textarea>
+        <div class="ph-tags">
+          <span class="ph-tag" onclick="ins('s-ctx','{{issue_key}}')">{{issue_key}}</span>
+          <span class="ph-tag" onclick="ins('s-ctx','{{summary}}')">{{summary}}</span>
+          <span class="ph-tag" onclick="ins('s-ctx','{{description}}')">{{description}}</span>
+          <span class="ph-tag" onclick="ins('s-ctx','{{priority}}')">{{priority}}</span>
+          <span class="ph-tag" onclick="ins('s-ctx','{{components}}')">{{components}}</span>
         </div>
-        <div class="log-panel-body" id="log-panel-body"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Section 3: Recent Activity Log -->
-  <div class="card">
-    <div class="card-header">Activity Log</div>
-    <div class="card-body">
-      <div class="log-scroll" id="activity-log"></div>
-    </div>
-  </div>
-
-  <!-- Section 4: Pull Requests -->
-  <div class="card">
-    <div class="card-header">Pull Requests</div>
-    <div class="card-body">
-      <div id="pr-list"></div>
-    </div>
-  </div>
-
-  <!-- Section 5: Errors & Failures -->
-  <div class="card full">
-    <div class="card-header">
-      Errors & Failures
-      <span id="error-count" style="font-size: 12px; color: var(--red);"></span>
-    </div>
-    <div class="card-body">
-      <div id="error-list"></div>
-    </div>
-  </div>
-
-</div>
-</div><!-- end dashboard-page -->
-
-<div class="settings-page" id="page-settings">
-  <div class="setting-group">
-    <div class="setting-group-header">Model</div>
-    <div class="setting-group-body">
-      <div class="setting-label">Codex Model</div>
-      <div class="setting-hint">The model passed to <code>codex exec -m</code>. Leave empty to use the Codex default.</div>
-      <input type="text" id="setting-model" spellcheck="false" placeholder="e.g. o3, o4-mini, claude-sonnet-4-20250514"
-        style="width: 100%; max-width: 400px; padding: 8px 12px; border-radius: 6px;
-          border: 1px solid var(--border); background: var(--bg); color: var(--text);
-          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
-        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-      >
-      <div class="setting-label" style="margin-top: 20px;">PR Reviewers</div>
-      <div class="setting-hint">Comma-separated Bitbucket account IDs to add as reviewers on every created PR.</div>
-      <input type="text" id="setting-reviewers" spellcheck="false" placeholder="e.g. 5d1234abcdef, 61abcdef1234"
-        style="width: 100%; max-width: 600px; padding: 8px 12px; border-radius: 6px;
-          border: 1px solid var(--border); background: var(--bg); color: var(--text);
-          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
-        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-      >
-
-      <div class="setting-label" style="margin-top: 20px;">Reasoning Effort</div>
-      <div class="setting-hint">Passed as <code>-c reasoning_effort=&lt;value&gt;</code> to <code>codex exec</code>.</div>
-      <select id="setting-effort"
-        style="width: 100%; max-width: 200px; padding: 8px 12px; border-radius: 6px;
-          border: 1px solid var(--border); background: var(--bg); color: var(--text);
-          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none; cursor: pointer;"
-        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-      >
-        <option value="none">none</option>
-        <option value="minimal">minimal</option>
-        <option value="low">low</option>
-        <option value="medium" selected>medium</option>
-        <option value="high">high</option>
-        <option value="xhigh">xhigh</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="setting-group">
-    <div class="setting-group-header">Prompt Templates</div>
-    <div class="setting-group-body">
-      <p class="setting-hint">
-        These templates control the prompt sent to Codex when processing a ticket.
-        Use placeholders like <code>{key}</code> that get replaced with ticket data at runtime.
-        Use <code>{{</code> and <code>}}</code> for literal braces in the output.
-      </p>
-      <div class="placeholders" style="margin-bottom: 20px;">
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{key}')">{key}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{summary}')">{summary}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{description}')">{description}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{components}')">{components}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{labels}')">{labels}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{priority}')">{priority}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{issue_type}')">{issue_type}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{acceptance_criteria}')">{acceptance_criteria}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{workspace_path}')">{workspace_path}</span>
-        <span class="placeholder-tag" onclick="insertPlaceholder('prompt_context', '{run_manifest}')">{run_manifest}</span>
       </div>
 
-      <div class="setting-label">Context Template</div>
-      <div class="setting-hint">Ticket information passed to the model. Rendered first in the prompt.</div>
-      <textarea class="setting-textarea" id="setting-prompt_context" spellcheck="false"></textarea>
+      <div class="form-row">
+        <label class="form-lbl" for="s-instr">Instructions</label>
+        <textarea id="s-instr" class="form-ta" rows="7"></textarea>
+        <div class="ph-tags">
+          <span class="ph-tag" onclick="ins('s-instr','{{issue_key}}')">{{issue_key}}</span>
+          <span class="ph-tag" onclick="ins('s-instr','{{summary}}')">{{summary}}</span>
+          <span class="ph-tag" onclick="ins('s-instr','{{branch}}')">{{branch}}</span>
+        </div>
+      </div>
 
-      <div class="setting-label" style="margin-top: 20px;">Instructions Template</div>
-      <div class="setting-hint">Workflow instructions appended after the context. Prefixed with "Instructions:" automatically.</div>
-      <textarea class="setting-textarea" id="setting-prompt_instructions" spellcheck="false" style="min-height: 300px;"></textarea>
+      <div class="form-row">
+        <label class="form-lbl" for="s-pr">PR Comment</label>
+        <textarea id="s-pr" class="form-ta" rows="5"></textarea>
+        <div class="ph-tags">
+          <span class="ph-tag" onclick="ins('s-pr','{{comment}}')">{{comment}}</span>
+          <span class="ph-tag" onclick="ins('s-pr','{{pr_title}}')">{{pr_title}}</span>
+          <span class="ph-tag" onclick="ins('s-pr','{{repo}}')">{{repo}}</span>
+        </div>
+      </div>
+    </div>
 
-      <div class="setting-actions">
-        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
-        <button class="btn btn-danger" onclick="resetSettings()">Reset to Defaults</button>
-        <span class="save-status" id="save-status">Saved!</span>
+    <div class="settings-actions">
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
+      <button class="btn-ghost" onclick="resetSettings()">Reset to Defaults</button>
+      <div class="toast" id="toast">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Saved
       </div>
     </div>
   </div>
 </div>
 
 <script>
-const $ = (s) => document.getElementById(s);
+// ── STATE ──────────────────────────────────────────────────────
+let currentKey  = null;
+let startedAt   = null;
+let logSinceId  = 0;
+let logLines    = [];
+let autoScroll  = true;
+let logTimer    = null;
+let elTimer     = null;
+let lastTickets = null;
+let expandedKey = null;
+let cachedLogs  = {};
+let prMap       = {};
+let settingsDef = {};
 
-function fmt(ts) {
-  if (!ts) return '-';
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const MAX_LINES = 600;
+
+// ── UTILS ──────────────────────────────────────────────────────
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function fmtDur(s) {
+  if (!s || s < 0) return '—';
+  s = Math.round(s);
+  const m = Math.floor(s / 60), sec = s % 60;
+  return m ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-function fmtDate(ts) {
-  if (!ts) return '-';
-  const d = new Date(ts * 1000);
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmt(ts);
+function normTs(ts) {
+  if (!ts) return null;
+  return ts.endsWith('Z') ? ts : ts + 'Z';
 }
 
-function fmtDuration(sec) {
-  if (!sec || sec <= 0) return '-';
-  if (sec < 60) return Math.round(sec) + 's';
-  if (sec < 3600) return Math.round(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
-  return Math.round(sec / 3600) + 'h ' + Math.round((sec % 3600) / 60) + 'm';
+function fmtElapsed(ts) {
+  if (!ts) return '0s';
+  const s = Math.round((Date.now() - new Date(normTs(ts)).getTime()) / 1000);
+  const m = Math.floor(s / 60);
+  return m ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-function fmtUptime(sec) {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m uptime` : `${m}m uptime`;
+function relTime(ts) {
+  if (!ts) return '—';
+  const s = (Date.now() - new Date(normTs(ts)).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
-function badge(status) {
-  const cls = 'badge badge-' + (status || 'queued').replace(/[\s_]/g, '-').toLowerCase();
-  return `<span class="${cls}">${status || 'unknown'}</span>`;
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(normTs(ts));
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,'0')).join(':');
 }
 
-function eventColor(type) {
-  const colors = {
-    queued: 'var(--yellow)', started: 'var(--accent)', 'codex-running': 'var(--purple)',
-    pushing: 'var(--orange)', 'creating-pr': 'var(--orange)',
-    pr_created: 'var(--green)', done: 'var(--green)', failed: 'var(--red)',
-    cancelled: 'var(--yellow)',
-  };
-  return colors[type] || 'var(--text-muted)';
+async function api(path) {
+  try { const r = await fetch(path); return r.ok ? r.json() : null; }
+  catch { return null; }
 }
 
-async function cancelJob() {
-  if (!confirm('Cancel the current job? The codex process will be killed.')) return;
-  const btn = document.querySelector('.btn-cancel');
-  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling...'; }
-  try {
-    const r = await fetch('/api/cancel', { method: 'POST' });
-    const data = await r.json();
-    if (!data.cancelled) {
-      alert(data.error || 'Nothing to cancel');
-    }
-  } catch (e) {
-    alert('Failed to cancel: ' + e.message);
-  }
-  refresh();
+// ── NAV ────────────────────────────────────────────────────────
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'settings') loadSettings();
 }
 
-// -- Fetch helpers --
-async function fetchJSON(url) {
-  const r = await fetch(url);
-  return r.json();
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
 }
 
-// -- Render functions --
-function renderStats(data) {
-  $('stat-today').textContent = data.tickets_today;
-  $('stat-week').textContent = data.tickets_this_week;
-  $('stat-total').textContent = data.total_tickets;
-  $('stat-rate').textContent = data.success_rate + '%';
-  $('stat-avg').textContent = fmtDuration(data.avg_duration_seconds);
-  $('stat-prs').textContent = data.total_prs;
-}
+// ── ACTIVE JOB ─────────────────────────────────────────────────
+function renderStatus(status) {
+  const t = status?.current_ticket;
+  const running = !!t;
 
-function renderWorkerStatus(data) {
-  const b = $('worker-badge');
-  if (data.state === 'busy') {
-    b.className = 'worker-badge busy';
-    b.textContent = 'Processing';
-  } else {
-    b.className = 'worker-badge idle';
-    b.textContent = 'Idle';
-  }
+  document.getElementById('job-idle').style.display = running ? 'none' : '';
+  const runEl = document.getElementById('job-running');
+  runEl.style.display = running ? 'flex' : 'none';
+  document.getElementById('job-card').classList.toggle('running', running);
 
-  const cur = $('worker-current');
-  if (data.current_ticket) {
-    const t = data.current_ticket;
-    cur.innerHTML = `<div class="worker-current">
-      <span class="key">${t.issue_key}</span>
-      <span style="color: var(--text-muted); margin-left: 8px;">${t.summary || ''}</span>
-      ${badge(t.status)}
-      <button class="btn-cancel" onclick="cancelJob()">Cancel</button>
-    </div>`;
-  } else {
-    cur.innerHTML = '<div class="empty">No ticket in progress</div>';
-  }
-
-  $('queue-count').textContent = data.queue_size;
-  if (data.uptime_seconds) {
-    $('uptime').textContent = fmtUptime(data.uptime_seconds);
-  }
-}
-
-function renderQueue(data) {
-  const el = $('queue-list');
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">Queue empty</div>';
+  if (!running) {
+    stopElTimer(); stopLogPoll();
+    const up = status?.uptime_seconds;
+    document.getElementById('idle-uptime').textContent = up ? `uptime ${fmtDur(up)}` : '';
     return;
   }
-  el.innerHTML = data.map(t =>
-    `<div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;">
-      <span style="font-weight: 600; color: var(--yellow);">${t.issue_key}</span>
-      <span style="color: var(--text-muted); font-size: 12px;">${fmt(t.queued_at)}</span>
-    </div>`
+
+  const key = t.issue_key;
+  document.getElementById('job-key').textContent = key;
+  document.getElementById('job-summary').textContent = t.summary || '';
+
+  const phEl = document.getElementById('job-phase');
+  phEl.textContent = t.status || 'processing';
+  phEl.className = `phase-badge ${phaseClass(t.status)}`;
+
+  const chips = [t.priority, t.issue_type, t.components].filter(Boolean);
+  document.getElementById('job-chips').innerHTML =
+    chips.map(c => `<span class="chip">${esc(c)}</span>`).join('');
+
+  document.getElementById('job-card-sub').textContent =
+    t.started_at ? relTime(t.started_at) : '';
+
+  if (key !== currentKey) {
+    currentKey = key;
+    startedAt  = t.started_at;
+    logSinceId = 0;
+    logLines   = [];
+    renderTerminal();
+    startLogPoll();
+  } else {
+    startedAt = t.started_at;
+  }
+  startElTimer();
+}
+
+function phaseClass(p) {
+  return {
+    processing:     'ph-processing',
+    'codex-running':'ph-codex-running',
+    pushing:        'ph-pushing',
+    'creating-pr':  'ph-creating-pr',
+    queued:         'ph-queued',
+  }[p] || 'ph-processing';
+}
+
+// ── ELAPSED TIMER ──────────────────────────────────────────────
+function startElTimer() {
+  stopElTimer();
+  elTimer = setInterval(() => {
+    if (startedAt) document.getElementById('job-elapsed').textContent = fmtElapsed(startedAt);
+  }, 1000);
+}
+function stopElTimer() { if (elTimer) { clearInterval(elTimer); elTimer = null; } }
+
+// ── LOG POLLING ────────────────────────────────────────────────
+function startLogPoll() {
+  stopLogPoll();
+  pollLogs();
+  logTimer = setInterval(pollLogs, 2000);
+}
+function stopLogPoll() { if (logTimer) { clearInterval(logTimer); logTimer = null; } }
+
+async function pollLogs() {
+  if (!currentKey) return;
+  const data = await api(`/api/logs/${currentKey}?since_id=${logSinceId}`);
+  if (!data?.logs?.length) return;
+  logSinceId = data.logs[data.logs.length - 1].id;
+  logLines.push(...data.logs);
+  if (logLines.length > MAX_LINES) logLines = logLines.slice(-MAX_LINES);
+  renderTerminal();
+}
+
+function renderTerminal() {
+  const el = document.getElementById('terminal');
+  if (!logLines.length) {
+    el.innerHTML = '<span class="term-placeholder">Waiting for output\u2026</span>';
+    return;
+  }
+  el.innerHTML = logLines.map(l =>
+    `<div class="log-row${l.stream === 'stderr' ? ' err' : ''}">` +
+    `<span class="log-ts">${fmtTime(l.timestamp)}</span>` +
+    `<span class="log-txt">${esc(l.line)}</span></div>`
+  ).join('');
+  if (autoScroll) el.scrollTop = el.scrollHeight;
+}
+
+// ── QUEUE ──────────────────────────────────────────────────────
+function renderQueue(queue) {
+  document.getElementById('queue-cnt').textContent = queue?.length ?? 0;
+  const body = document.getElementById('queue-body');
+  if (!queue?.length) {
+    body.innerHTML = '<div class="queue-empty">Queue is empty</div>';
+    return;
+  }
+  body.innerHTML = queue.map((t, i) =>
+    `<div class="queue-item">` +
+    `<span class="queue-num">${i + 1}</span>` +
+    `<span class="queue-key">${esc(t.issue_key)}</span>` +
+    `<span class="queue-sum">${esc(t.summary || '')}</span>` +
+    `</div>`
   ).join('');
 }
 
-function renderTimeline(data) {
-  const el = $('timeline');
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">No tickets processed yet</div>';
-    return;
-  }
-  el.innerHTML = data.map(t => {
-    const dur = t.finished_at && t.started_at ? t.finished_at - t.started_at : null;
-    return `<div class="timeline-item" data-key="${t.issue_key}" onclick="openLogPanel('${t.issue_key}')">
-      <span class="timeline-key">${t.issue_key}</span>
-      ${badge(t.status)}
-      <span class="timeline-summary">${t.summary || ''}</span>
-      <span class="timeline-duration">${dur ? fmtDuration(dur) : (t.started_at ? 'In progress...' : '-')}</span>
-    </div>`;
+// ── STATS ──────────────────────────────────────────────────────
+function renderStats(s) {
+  if (!s) return;
+  document.getElementById('s-today').textContent = s.tickets_today ?? '—';
+  document.getElementById('s-week').textContent  = s.tickets_this_week ?? '—';
+  document.getElementById('s-total').textContent = s.total_tickets ?? '—';
+  document.getElementById('s-avg').textContent   = fmtDur(s.avg_duration_seconds);
+  document.getElementById('s-prs').textContent   = s.total_prs ?? '—';
+
+  const srEl = document.getElementById('s-success');
+  const sr   = s.success_rate;
+  srEl.textContent = sr != null ? `${sr.toFixed(0)}%` : '—';
+  srEl.className = 'stat-val ' + (sr == null ? '' : sr >= 90 ? 'good' : sr >= 70 ? 'warn' : 'bad');
+}
+
+// ── WEBHOOK ────────────────────────────────────────────────────
+function renderWebhook(wh) {
+  if (!wh) return;
+  document.getElementById('wh-last').textContent  = relTime(wh.last_received);
+  document.getElementById('wh-total').textContent = wh.total_count ?? '—';
+  const fEl = document.getElementById('wh-fail');
+  fEl.textContent = wh.sig_failures ?? '—';
+  fEl.style.color = wh.sig_failures > 0 ? 'var(--red)' : 'var(--text-2)';
+}
+
+// ── TICKETS TABLE ──────────────────────────────────────────────
+function statusBadge(s) {
+  const map = {
+    done:           ['b-done',      'Done'],
+    failed:         ['b-failed',    'Failed'],
+    processing:     ['b-running',   'Running'],
+    'codex-running':['b-running',   'Running'],
+    pushing:        ['b-running',   'Pushing'],
+    'creating-pr':  ['b-running',   'PR'],
+    queued:         ['b-queued',    'Queued'],
+    cancelled:      ['b-cancelled', 'Cancelled'],
+  };
+  const [cls, lbl] = map[s] || ['b-queued', s];
+  return `<span class="badge ${cls}">${lbl}</span>`;
+}
+
+function renderTickets(tickets) {
+  if (!tickets) return;
+  lastTickets = tickets;
+  const body = document.getElementById('tickets-body');
+  if (!tickets.length) { body.innerHTML = '<div class="empty">No tickets yet</div>'; return; }
+
+  body.innerHTML = tickets.map(t => {
+    const dur = t.started_at && t.finished_at
+      ? (new Date(normTs(t.finished_at)) - new Date(normTs(t.started_at))) / 1000 : null;
+    const pr  = prMap[t.issue_key];
+    const open = t.issue_key === expandedKey;
+
+    return `<div class="t-row${open ? ' open' : ''}" onclick="toggleLog('${esc(t.issue_key)}')">
+      <div>${statusBadge(t.status)}</div>
+      <div><span class="t-key">${esc(t.issue_key)}</span>&nbsp;<span class="t-sum">${esc(t.summary||'')}</span></div>
+      <div class="t-dur">${fmtDur(dur)}</div>
+      <div class="t-when">${relTime(t.finished_at || t.started_at || t.queued_at)}</div>
+      <div class="t-pr">${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}</div>
+    </div>` + (open ? renderInlineLog(t.issue_key) : '');
   }).join('');
-  // Re-anchor the log panel if it's active
-  if (logPanelKey) {
-    const row = el.querySelector(`.timeline-item[data-key="${logPanelKey}"]`);
-    if (row) row.after($('log-panel'));
+}
+
+function renderInlineLog(key) {
+  const logs = cachedLogs[key];
+  if (!logs) return `<div class="inline-log" style="color:var(--term-muted);font-style:italic">Loading\u2026</div>`;
+  if (!logs.length) return `<div class="inline-log" style="color:var(--term-muted);font-style:italic">No logs</div>`;
+  return `<div class="inline-log">` +
+    logs.map(l =>
+      `<div class="${l.stream === 'stderr' ? 'err' : ''}">` +
+      `<span class="log-ts">${fmtTime(l.timestamp)}</span>${esc(l.line)}</div>`
+    ).join('') + `</div>`;
+}
+
+async function toggleLog(key) {
+  if (expandedKey === key) {
+    expandedKey = null;
+  } else {
+    expandedKey = key;
+    if (!cachedLogs[key]) {
+      const data = await api(`/api/logs/${key}`);
+      cachedLogs[key] = data?.logs || [];
+    }
   }
+  if (lastTickets) renderTickets(lastTickets);
 }
 
-// -- Log panel --
-let logPanelKey = null;
-let logPanelLastId = 0;
-let logPollTimer = null;
-
-async function openLogPanel(issueKey) {
-  if (logPanelKey === issueKey) { closeLogPanel(); return; }
-  const panel = $('log-panel');
-  const body = $('log-panel-body');
-  $('log-panel-key').textContent = issueKey;
-  logPanelKey = issueKey;
-  logPanelLastId = 0;
-  body.textContent = 'Loading...';
-  // Move panel to appear directly below the clicked row
-  const row = document.querySelector(`.timeline-item[data-key="${issueKey}"]`);
-  if (row) row.after(panel);
-  panel.classList.add('active');
-
-  await fetchLogLines();
-  // Start polling for live updates
-  clearInterval(logPollTimer);
-  logPollTimer = setInterval(fetchLogLines, 2000);
-}
-
-function closeLogPanel() {
-  $('log-panel').classList.remove('active');
-  logPanelKey = null;
-  clearInterval(logPollTimer);
-}
-
-async function fetchLogLines() {
-  if (!logPanelKey) return;
-  try {
-    const lines = await fetchJSON(`/api/logs/${logPanelKey}?since_id=${logPanelLastId}`);
-    const body = $('log-panel-body');
-    if (logPanelLastId === 0) {
-      body.textContent = '';
-      if (!lines.length) {
-        body.textContent = 'No log output yet.';
-        return;
-      }
-    }
-    for (const entry of lines) {
-      const span = document.createElement('span');
-      span.className = 'log-new';
-      span.textContent = entry.line + '\n';
-      body.appendChild(span);
-      logPanelLastId = entry.id;
-    }
-    if (lines.length) {
-      body.scrollTop = body.scrollHeight;
-    }
-  } catch (e) {}
-}
-
-function renderActivityLog(data) {
-  const el = $('activity-log');
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">No activity yet</div>';
-    return;
-  }
-  el.innerHTML = data.map(e =>
-    `<div class="log-entry">
-      <span class="log-time">${fmt(e.ts)}</span>
-      <span class="log-type" style="color: ${eventColor(e.event_type)};">${e.event_type}</span>
-      <span class="log-detail">${e.detail || ''}</span>
+// ── PRS ────────────────────────────────────────────────────────
+function renderPRs(prs) {
+  if (!prs) return;
+  prMap = {};
+  prs.forEach(p => { prMap[p.issue_key] = p; });
+  const el = document.getElementById('prs-panel');
+  if (!prs.length) { el.innerHTML = '<div class="empty">No pull requests yet</div>'; return; }
+  el.innerHTML = prs.map(p =>
+    `<div class="pr-row">
+      <div class="pr-id"><a href="${esc(p.pr_url)}" target="_blank">${esc(p.issue_key)} #${p.pr_id}</a></div>
+      <div class="pr-repo">${esc(p.repo_slug||'')}</div>
+      <div class="pr-branch">${esc(p.branch||'')} \u2192 ${esc(p.dest_branch||'main')}</div>
+      <div class="pr-when">${relTime(p.created_at)}</div>
+      <div><a href="${esc(p.pr_url)}" target="_blank" style="font-size:12px">Open \u2192</a></div>
     </div>`
   ).join('');
 }
 
-function renderPRs(data) {
-  const el = $('pr-list');
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">No pull requests yet</div>';
-    return;
-  }
-  el.innerHTML = data.map(pr =>
-    `<div class="pr-item">
-      <span style="font-weight: 600; color: var(--accent);">${pr.issue_key}</span>
-      <div>
-        <a href="${pr.pr_url}" target="_blank" class="pr-link">${pr.branch}</a>
-        <div class="pr-repo">${pr.workspace}/${pr.repo_slug} &rarr; ${pr.dest_branch}</div>
+// ── ERRORS ─────────────────────────────────────────────────────
+function renderErrors(errors) {
+  if (!errors) return;
+  const el = document.getElementById('errors-panel');
+  if (!errors.length) { el.innerHTML = '<div class="empty">No errors \u2014 all good!</div>'; return; }
+  el.innerHTML = errors.map(e =>
+    `<div class="err-row">
+      <div class="err-head">
+        ${statusBadge('failed')}
+        <span class="t-key">${esc(e.issue_key)}</span>
+        <span class="err-sum">${esc(e.summary||'')}</span>
+        <span class="err-when">${relTime(e.finished_at)}</span>
       </div>
-      ${badge(pr.status)}
-      <span style="font-size: 12px; color: var(--text-muted);">${fmt(pr.created_at)}</span>
+      ${e.error ? `<div class="err-msg">${esc(e.error)}</div>` : ''}
     </div>`
   ).join('');
 }
 
-function renderErrors(data) {
-  const el = $('error-list');
-  $('error-count').textContent = data.length ? `${data.length} failure${data.length > 1 ? 's' : ''}` : '';
-  if (!data.length) {
-    el.innerHTML = '<div class="empty">No errors - all clear</div>';
-    return;
-  }
-  el.innerHTML = data.map(e =>
-    `<div class="error-item">
-      <div class="error-header">
-        <span class="error-key">${e.issue_key} - ${e.summary || 'Unknown'}</span>
-        <span class="error-time">${fmtDate(e.finished_at)}</span>
-      </div>
-      <div class="error-msg">${e.error || 'No error details recorded'}</div>
+// ── ACTIVITY ───────────────────────────────────────────────────
+function renderActivity(events) {
+  if (!events) return;
+  const el = document.getElementById('activity-panel');
+  if (!events.length) { el.innerHTML = '<div class="empty">No activity yet</div>'; return; }
+  el.innerHTML = events.map(ev =>
+    `<div class="act-row">
+      <span class="act-key">${esc(ev.issue_key||'\u2014')}</span>
+      <span class="act-txt">${esc(ev.detail||ev.event_type||'')}</span>
+      <span class="act-when">${relTime(ev.timestamp)}</span>
     </div>`
   ).join('');
 }
 
-function renderWebhookHealth(data) {
-  $('wh-last').textContent = data.last_received ? fmtDate(data.last_received) : 'Never';
-  $('wh-total').textContent = data.total_received || 0;
-  const failures = $('wh-failures');
-  failures.textContent = data.sig_failures || 0;
-  failures.style.color = data.sig_failures > 0 ? 'var(--red)' : 'var(--green)';
+// ── CANCEL ─────────────────────────────────────────────────────
+async function cancelJob() {
+  const btn = document.getElementById('cancel-btn');
+  btn.textContent = 'Cancelling\u2026';
+  btn.disabled = true;
+  try { await fetch('/api/cancel', { method: 'POST' }); } catch {}
+  setTimeout(refresh, 1200);
 }
 
-// -- Full refresh --
+// ── FULL REFRESH ───────────────────────────────────────────────
 async function refresh() {
-  const [status, queue, tickets, events, prs, errors, stats, health] = await Promise.all([
-    fetchJSON('/api/status'),
-    fetchJSON('/api/queue'),
-    fetchJSON('/api/tickets'),
-    fetchJSON('/api/events'),
-    fetchJSON('/api/prs'),
-    fetchJSON('/api/errors'),
-    fetchJSON('/api/stats'),
-    fetchJSON('/api/webhook-health'),
+  const [status, queue, stats, tickets, prs, errors, webhook, events] = await Promise.all([
+    api('/api/status'), api('/api/queue'), api('/api/stats'),
+    api('/api/tickets'), api('/api/prs'), api('/api/errors'),
+    api('/api/webhook-health'), api('/api/events'),
   ]);
-  renderWorkerStatus(status);
+  renderStatus(status);
   renderQueue(queue);
-  renderTimeline(tickets);
-  renderActivityLog(events);
-  renderPRs(prs);
-  renderErrors(errors);
   renderStats(stats);
-  renderWebhookHealth(health);
+  renderWebhook(webhook);
+  renderPRs(prs);
+  renderTickets(tickets);
+  renderErrors(errors);
+  renderActivity(events);
 }
 
-// -- SSE live updates --
+// ── SSE ────────────────────────────────────────────────────────
+let sseRetry = null;
+
 function connectSSE() {
-  const es = new EventSource('/api/stream');
+  const es  = new EventSource('/api/stream');
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+
   es.onopen = () => {
-    $('sse-dot').className = 'dot connected';
-    $('sse-label').textContent = 'Live';
+    dot.className = 'conn-dot live';
+    lbl.textContent = 'Live';
+    if (sseRetry) { clearTimeout(sseRetry); sseRetry = null; }
   };
+
+  ['ticket_update','pr_created','event'].forEach(ev =>
+    es.addEventListener(ev, () => refresh())
+  );
+
+  es.addEventListener('log_line', e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.issue_key !== currentKey) return;
+      logLines.push({ id: msg.id, timestamp: msg.timestamp, stream: msg.stream || 'stdout', line: msg.line });
+      if (logLines.length > MAX_LINES) logLines = logLines.slice(-MAX_LINES);
+      if (msg.id > logSinceId) logSinceId = msg.id;
+      renderTerminal();
+    } catch {}
+  });
+
   es.onerror = () => {
-    $('sse-dot').className = 'dot disconnected';
-    $('sse-label').textContent = 'Reconnecting...';
+    dot.className = 'conn-dot error';
+    lbl.textContent = 'Reconnecting';
+    es.close();
+    sseRetry = setTimeout(connectSSE, 5000);
   };
-  // On any event, do a full refresh (simple and reliable)
-  ['ticket_update', 'pr_created', 'event'].forEach(evt => {
-    es.addEventListener(evt, () => refresh());
-  });
-  // Stream log lines directly into the panel
-  es.addEventListener('log_line', (e) => {
-    const data = JSON.parse(e.data);
-    if (logPanelKey && data.issue_key === logPanelKey) {
-      const body = $('log-panel-body');
-      if (body.textContent === 'No log output yet.') body.textContent = '';
-      const span = document.createElement('span');
-      span.className = 'log-new';
-      span.textContent = data.line + '\n';
-      body.appendChild(span);
-      body.scrollTop = body.scrollHeight;
-    }
-  });
 }
 
-// -- Page navigation --
-function switchPage(page) {
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.dashboard-page, .settings-page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
-  document.querySelector(`.nav-tab[onclick*="${page}"]`).classList.add('active');
-  if (page === 'settings') loadSettings();
-  // Handle direct URL navigation
-  history.replaceState(null, '', page === 'settings' ? '/dashboard/settings' : '/dashboard');
-}
-
-// -- Settings --
-let settingsDefaults = {};
-
+// ── SETTINGS ───────────────────────────────────────────────────
 async function loadSettings() {
-  const data = await fetchJSON('/api/settings');
-  settingsDefaults = data.defaults || {};
-  const settings = data.settings || {};
-  for (const [key, val] of Object.entries(settings)) {
-    const el = document.getElementById('setting-' + key);
-    if (el) el.value = val;
-  }
+  const data = await api('/api/settings');
+  if (!data) return;
+  settingsDef = data.defaults || {};
+  const s = data.settings || {};
+  document.getElementById('s-model').value  = s.model || '';
+  document.getElementById('s-effort').value = s.effort || 'medium';
+  document.getElementById('s-ctx').value    = s.prompt_context || '';
+  document.getElementById('s-instr').value  = s.prompt_instructions || '';
+  document.getElementById('s-pr').value     = s.prompt_pr_comment || '';
 }
 
 async function saveSettings() {
-  const settings = {};
-  document.querySelectorAll('.setting-textarea, [id^="setting-"]').forEach(el => {
-    if (!el.id.startsWith('setting-')) return;
-    const key = el.id.replace('setting-', '');
-    settings[key] = el.value;
-  });
   await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings }),
+    body: JSON.stringify({ settings: {
+      model:               document.getElementById('s-model').value,
+      effort:              document.getElementById('s-effort').value,
+      prompt_context:      document.getElementById('s-ctx').value,
+      prompt_instructions: document.getElementById('s-instr').value,
+      prompt_pr_comment:   document.getElementById('s-pr').value,
+    }}),
   });
-  const status = $('save-status');
-  status.classList.add('visible');
-  setTimeout(() => status.classList.remove('visible'), 2000);
+  const t = document.getElementById('toast');
+  t.classList.remove('show');
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 function resetSettings() {
-  if (!confirm('Reset all prompts to their defaults? Unsaved changes will be lost.')) return;
-  for (const [key, val] of Object.entries(settingsDefaults)) {
-    const el = document.getElementById('setting-' + key);
-    if (el) el.value = val;
-  }
+  document.getElementById('s-model').value  = settingsDef.model || '';
+  document.getElementById('s-effort').value = settingsDef.effort || 'medium';
+  document.getElementById('s-ctx').value    = settingsDef.prompt_context || '';
+  document.getElementById('s-instr').value  = settingsDef.prompt_instructions || '';
+  document.getElementById('s-pr').value     = settingsDef.prompt_pr_comment || '';
 }
 
-function insertPlaceholder(textareaKey, placeholder) {
-  // Insert into whichever textarea is focused, or the context one by default
-  const active = document.activeElement;
-  const target = (active && active.classList.contains('setting-textarea'))
-    ? active
-    : document.getElementById('setting-' + textareaKey);
-  if (!target) return;
-  const start = target.selectionStart;
-  const end = target.selectionEnd;
-  target.value = target.value.slice(0, start) + placeholder + target.value.slice(end);
-  target.selectionStart = target.selectionEnd = start + placeholder.length;
-  target.focus();
+function ins(id, text) {
+  const el = document.getElementById(id);
+  const s = el.selectionStart, e = el.selectionEnd;
+  el.value = el.value.slice(0, s) + text + el.value.slice(e);
+  el.selectionStart = el.selectionEnd = s + text.length;
+  el.focus();
 }
 
-// -- Init --
-// Check URL for initial page
-if (location.pathname === '/dashboard/settings') {
-  switchPage('settings');
-}
-refresh();
-connectSSE();
-// Fallback polling every 30s
-setInterval(refresh, 30000);
+// ── INIT ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('terminal').addEventListener('scroll', ev => {
+    const el = ev.target;
+    autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+  });
+  refresh();
+  connectSSE();
+  setInterval(refresh, 30000);
+});
 </script>
 </body>
 </html>
