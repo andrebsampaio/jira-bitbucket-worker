@@ -564,13 +564,18 @@ function renderTimeline(data) {
   }
   el.innerHTML = data.map(t => {
     const dur = t.finished_at && t.started_at ? t.finished_at - t.started_at : null;
-    return `<div class="timeline-item" onclick="openLogPanel('${t.issue_key}')">
+    return `<div class="timeline-item" data-key="${t.issue_key}" onclick="openLogPanel('${t.issue_key}')">
       <span class="timeline-key">${t.issue_key}</span>
       ${badge(t.status)}
       <span class="timeline-summary">${t.summary || ''}</span>
       <span class="timeline-duration">${dur ? fmtDuration(dur) : (t.started_at ? 'In progress...' : '-')}</span>
     </div>`;
   }).join('');
+  // Re-anchor the log panel if it's active
+  if (logPanelKey) {
+    const row = el.querySelector(`.timeline-item[data-key="${logPanelKey}"]`);
+    if (row) row.after($('log-panel'));
+  }
 }
 
 // -- Log panel --
@@ -585,6 +590,9 @@ async function openLogPanel(issueKey) {
   logPanelKey = issueKey;
   logPanelLastId = 0;
   body.textContent = 'Loading...';
+  // Move panel to appear directly below the clicked row
+  const row = document.querySelector(`.timeline-item[data-key="${issueKey}"]`);
+  if (row) row.after(panel);
   panel.classList.add('active');
 
   await fetchLogLines();
