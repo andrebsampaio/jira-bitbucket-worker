@@ -7,6 +7,7 @@ and replies to the comment.
 Usage: python3 process_pr_comment.py <workspace> <repo_slug> <pr_id> <comment_id>
 """
 
+import json
 import os
 import re
 import shutil
@@ -277,8 +278,29 @@ def main():
             raise subprocess.CalledProcessError(proc.returncode, "codex")
         print(f"[pr-comment] Codex finished for {issue_key}")
 
+        # Load codex-generated commit message and reply from .codex-commit.json
+        codex_commit_file = os.path.join(worktree_path, ".codex-commit.json")
+        codex_commit_message = f"fix: address PR review comment (#{comment_id})"
+        codex_reply_template = "Fixed in commit `{hash}`"
+        if os.path.isfile(codex_commit_file):
+            try:
+                with open(codex_commit_file, encoding="utf-8") as f:
+                    codex_output = json.load(f)
+                codex_commit_message = codex_output.get("commit_message") or codex_commit_message
+                codex_reply_template = codex_output.get("reply_message") or codex_reply_template
+                print(f"[pr-comment] Loaded codex commit output from .codex-commit.json")
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[pr-comment] WARNING: could not parse .codex-commit.json: {e}", file=sys.stderr)
+        else:
+            print(f"[pr-comment] No .codex-commit.json found; using default commit message")
+
         # Commit the changes codex made (sandbox blocks git inside codex)
         db.ticket_phase(issue_key, "pushing", f"Committing and pushing fix for {issue_key}")
+
+        # Remove .codex-commit.json from the worktree before committing
+        if os.path.isfile(codex_commit_file):
+            os.remove(codex_commit_file)
+
         status = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=worktree_path,
@@ -290,7 +312,7 @@ def main():
 
         subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
         subprocess.run(
-            ["git", "commit", "-m", f"fix: address PR review comment (#{comment_id})"],
+            ["git", "commit", "-m", codex_commit_message],
             cwd=worktree_path,
             check=True,
         )
@@ -305,7 +327,7 @@ def main():
         print(f"[pr-comment] Pushed fix to {source_branch} (commit {commit_hash})")
 
         # Step 4 — Reply to comment
-        reply_body = f"Fixed in commit `{commit_hash}`"
+        reply_body = codex_reply_template.replace("{hash}", commit_hash)
         reply_to_comment(workspace, repo_slug, pr_id, comment_id, reply_body)
         print(f"[pr-comment] Replied to comment {comment_id}")
 

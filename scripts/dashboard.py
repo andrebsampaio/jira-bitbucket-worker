@@ -143,61 +143,18 @@ def _api_cancel(handler):
 
 # -- Default prompt templates -------------------------------------------------
 
-DEFAULT_PROMPT_CONTEXT = """You are implementing JIRA ticket {key}.
-Type: {issue_type}
-Priority: {priority}
-Summary: {summary}
-Components: {components}
-Labels: {labels}
+_PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
 
-Description:
-{description}
 
-Acceptance Criteria:
-{acceptance_criteria}""".strip()
+def _load_prompt(filename: str) -> str:
+    path = os.path.join(_PROMPTS_DIR, filename)
+    with open(path, encoding="utf-8") as f:
+        return f.read().strip()
 
-DEFAULT_PROMPT_INSTRUCTIONS = """Your working directory is: {workspace_path}
-It contains multiple repo directories (one per folder). Each repo is a git clone.
 
-1. Look at the components listed above and find the matching repo folder(s).
-   The folder names partially match the component names (e.g. component 'CMS UI' → folder 'cms').
-   List the directories to find the right one(s).
-
-2. For each repo you need to work in, create a git worktree:
-   cd <repo-folder> && git fetch origin && git worktree add ../../worktrees/{key}-<short-slug> -b feature/{key}-<short-slug> origin/<default-branch>
-   (create the worktrees/ directory under the workspace root if needed).
-
-3. Do all implementation, tests, and commits inside the worktree directory.
-   Use a meaningful commit message that references the ticket key.
-
-4. Do NOT push and do NOT create a pull request.
-
-5. After you are done, write a JSON manifest file at:
-   {run_manifest}
-   with this exact shape (valid JSON, no comments):
-   {{
-     "issue_key": "{key}",
-     "worktrees": [
-       {{
-         "worktree_path": "<absolute path to the worktree>",
-         "branch": "<the branch name you created>"
-       }}
-     ]
-   }}
-   Include one entry per worktree you created.""".strip()
-
-DEFAULT_PROMPT_PR_COMMENT = """A reviewer commented on PR "{pr_title}" in repo {repo_slug} (branch: {source_branch}).
-
-Reviewer's comment:
-{comment}
-
-File: {file_path}
-Line: {line}
-
-Diff:
-{diff}
-
-Apply the requested fix. Do NOT run git commit — just make the file changes. The commit and push will be handled externally.""".strip()
+DEFAULT_PROMPT_CONTEXT = _load_prompt("ticket_context.md")
+DEFAULT_PROMPT_INSTRUCTIONS = _load_prompt("ticket_instructions.md")
+DEFAULT_PROMPT_PR_COMMENT = _load_prompt("pr_comment.md")
 
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,

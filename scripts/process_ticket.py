@@ -322,7 +322,8 @@ def infer_worktrees(issue_key: str) -> list[dict]:
     return results
 
 
-def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: str) -> None:
+def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: str,
+                     pr_title: str = "", pr_description: str = "") -> None:
     """Push branch, create Bitbucket PR, then remove the worktree."""
     if not os.path.isdir(worktree_path):
         print(f"[process] Worktree path does not exist: {worktree_path}", file=sys.stderr)
@@ -349,10 +350,18 @@ def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: st
     workspace, repo_slug = parsed
     dest = fetch_repo_mainbranch(workspace, repo_slug)
 
-    summary = issue["fields"].get("summary", "")
-    title = f"[{issue_key}] {summary}"
-    description_text = extract_text(issue["fields"].get("description"))
-    body = f"Implements {issue_key}.\n\n{description_text}".strip()
+    # Use codex-generated PR title/description from manifest if available, else fall back
+    if pr_title:
+        title = pr_title
+    else:
+        summary = issue["fields"].get("summary", "")
+        title = f"[{issue_key}] {summary}"
+
+    if pr_description:
+        body = pr_description
+    else:
+        description_text = extract_text(issue["fields"].get("description"))
+        body = f"Implements {issue_key}.\n\n{description_text}".strip()
 
     print(f"[process] Creating PR: {workspace}/{repo_slug} {branch} -> {dest}")
     pr = create_bitbucket_pr(workspace, repo_slug, title, body, branch, dest)
@@ -451,8 +460,10 @@ def main():
     for entry in worktrees:
         wt_path = entry["worktree_path"]
         branch = entry["branch"]
+        pr_title = entry.get("pr_title", "")
+        pr_description = entry.get("pr_description", "")
         try:
-            process_worktree(issue, issue_key, wt_path, branch)
+            process_worktree(issue, issue_key, wt_path, branch, pr_title, pr_description)
             any_pr_created = True
         except Exception as e:
             print(f"[process] Error processing {wt_path}: {e}", file=sys.stderr)
