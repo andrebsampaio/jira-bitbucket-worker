@@ -207,6 +207,7 @@ header {
 }
 
 .job-card.running {
+  min-height: 0;
   border-color: var(--amber-line);
   animation: card-breathe 4s ease-in-out infinite;
 }
@@ -374,13 +375,18 @@ header {
 .btn-cancel:hover  { background: rgba(248,113,113,.18); }
 .btn-cancel:active { opacity: .7; }
 
-/* Terminal */
+/* Terminal — bounded height so long logs scroll inside instead of stretching the page */
+#job-running {
+  min-height: 0;
+}
+
 .term-wrap {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: min(58vh, 560px);
   overflow: hidden;
   background: var(--term-bg);
-  min-height: 200px;
 }
 
 /* Scanline texture */
