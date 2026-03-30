@@ -927,6 +927,10 @@ header {
           <option value="xhigh">Extra High</option>
         </select>
       </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-reviewers">Reviewers <em>comma-separated Bitbucket account IDs</em></label>
+        <input type="text" id="s-reviewers" class="form-input" placeholder="abc123, def456">
+      </div>
     </div>
 
     <div class="settings-group">
@@ -1388,6 +1392,7 @@ async function loadSettings() {
   const s = data.settings || {};
   document.getElementById('s-model').value  = s.model || '';
   document.getElementById('s-effort').value = s.effort || 'medium';
+  document.getElementById('s-reviewers').value = s.reviewers || '';
   document.getElementById('s-ctx').value    = s.prompt_context || '';
   document.getElementById('s-instr').value  = s.prompt_instructions || '';
   document.getElementById('s-pr').value     = s.prompt_pr_comment || '';
@@ -1400,6 +1405,7 @@ async function saveSettings() {
     body: JSON.stringify({ settings: {
       model:               document.getElementById('s-model').value,
       effort:              document.getElementById('s-effort').value,
+      reviewers:           document.getElementById('s-reviewers').value,
       prompt_context:      document.getElementById('s-ctx').value,
       prompt_instructions: document.getElementById('s-instr').value,
       prompt_pr_comment:   document.getElementById('s-pr').value,
@@ -1415,6 +1421,7 @@ async function saveSettings() {
 function resetSettings() {
   document.getElementById('s-model').value  = settingsDef.model || '';
   document.getElementById('s-effort').value = settingsDef.effort || 'medium';
+  document.getElementById('s-reviewers').value = settingsDef.reviewers || '';
   document.getElementById('s-ctx').value    = settingsDef.prompt_context || '';
   document.getElementById('s-instr').value  = settingsDef.prompt_instructions || '';
   document.getElementById('s-pr').value     = settingsDef.prompt_pr_comment || '';
