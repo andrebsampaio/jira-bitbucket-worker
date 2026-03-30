@@ -173,6 +173,27 @@ def has_unpushed_commits(worktree_dir: str) -> bool:
     return bool(r.stdout.strip())
 
 
+def has_uncommitted_changes(worktree_dir: str) -> bool:
+    r = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=worktree_dir,
+        capture_output=True,
+        text=True,
+    )
+    return bool(r.stdout.strip())
+
+
+def auto_commit_changes(worktree_dir: str, issue_key: str, summary: str) -> None:
+    """Stage and commit outstanding changes so reruns still produce PRs."""
+    message_summary = re.sub(r"\s+", " ", (summary or "Automated changes").strip())
+    if not message_summary:
+        message_summary = "Automated changes"
+    commit_message = f"{issue_key}: {message_summary[:200]}"
+    print(f"[process] Auto-committing pending changes in {worktree_dir}")
+    subprocess.run(["git", "add", "-A"], cwd=worktree_dir, check=True)
+    subprocess.run(["git", "commit", "-m", commit_message], cwd=worktree_dir, check=True)
+
+
 # ---------------------------------------------------------------------------
 # Bitbucket helpers
 # ---------------------------------------------------------------------------
@@ -333,7 +354,23 @@ def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: st
         return
 
     if not has_unpushed_commits(worktree_path):
-        print(f"[process] No new commits in {worktree_path}; skipping push/PR.")
+        if has_uncommitted_changes(worktree_path):
+            summary = issue["fields"].get("summary", "")
+            try:
+                auto_commit_changes(worktree_path, issue_key, summary)
+            except subprocess.CalledProcessError as exc:
+                print(
+                    f"[process] Failed to auto-commit changes in {worktree_path}: {exc}",
+                    file=sys.stderr,
+                )
+                return
+        else:
+            print(f"[process] No new commits in {worktree_path}; skipping push/PR.")
+            return
+
+    # Re-check after auto-commit fallback
+    if not has_unpushed_commits(worktree_path):
+        print(f"[process] No new commits in {worktree_path} after auto-commit; skipping push/PR.")
         return
 
     # Push
@@ -354,10 +391,10 @@ def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: st
     dest = fetch_repo_mainbranch(workspace, repo_slug)
 
     # Use codex-generated PR title/description from manifest if available, else fall back
+    summary = issue["fields"].get("summary", "")
     if pr_title:
         title = pr_title
     else:
-        summary = issue["fields"].get("summary", "")
         title = f"[{issue_key}] {summary}"
 
     if pr_description:
