@@ -382,6 +382,21 @@
           font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
         onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
       >
+      <div class="setting-label" style="margin-top: 20px;">Reasoning Effort</div>
+      <div class="setting-hint">Passed as <code>-c reasoning_effort=&lt;value&gt;</code> to <code>codex exec</code>.</div>
+      <select id="setting-effort"
+        style="width: 100%; max-width: 200px; padding: 8px 12px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--bg); color: var(--text);
+          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none; cursor: pointer;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+      >
+        <option value="none">none</option>
+        <option value="minimal">minimal</option>
+        <option value="low">low</option>
+        <option value="medium" selected>medium</option>
+        <option value="high">high</option>
+        <option value="xhigh">xhigh</option>
+      </select>
     </div>
   </div>
 

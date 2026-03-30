@@ -255,6 +255,9 @@ def main():
         model = db.get_setting("model", "")
         if model:
             cmd += ["-m", model]
+        effort = db.get_setting("effort", "")
+        if effort and effort != "none":
+            cmd += ["-c", f"reasoning_effort={effort}"]
         cmd.append(prompt)
 
         proc = subprocess.Popen(

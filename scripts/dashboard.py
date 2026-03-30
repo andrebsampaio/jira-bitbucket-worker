@@ -204,6 +204,7 @@ SETTINGS_DEFAULTS = {
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
     "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
     "model": "",
+    "effort": "medium",
 }
 
 
