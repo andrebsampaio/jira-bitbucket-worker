@@ -382,6 +382,15 @@
           font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
         onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
       >
+      <div class="setting-label" style="margin-top: 20px;">PR Reviewers</div>
+      <div class="setting-hint">Comma-separated Bitbucket account IDs to add as reviewers on every created PR.</div>
+      <input type="text" id="setting-reviewers" spellcheck="false" placeholder="e.g. 5d1234abcdef, 61abcdef1234"
+        style="width: 100%; max-width: 600px; padding: 8px 12px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--bg); color: var(--text);
+          font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; outline: none;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+      >
+
       <div class="setting-label" style="margin-top: 20px;">Reasoning Effort</div>
       <div class="setting-hint">Passed as <code>-c reasoning_effort=&lt;value&gt;</code> to <code>codex exec</code>.</div>
       <select id="setting-effort"

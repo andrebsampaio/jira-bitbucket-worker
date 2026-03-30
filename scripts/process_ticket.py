@@ -217,6 +217,7 @@ def create_bitbucket_pr(
     description: str,
     source_branch: str,
     dest_branch: str,
+    reviewers: list[str] | None = None,
 ) -> dict:
     url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}/pullrequests"
     body = {
@@ -225,6 +226,8 @@ def create_bitbucket_pr(
         "source": {"branch": {"name": source_branch}},
         "destination": {"branch": {"name": dest_branch}},
     }
+    if reviewers:
+        body["reviewers"] = [{"account_id": r} for r in reviewers]
     response = requests.post(url, auth=_bb_auth(), json=body)
     if response.status_code == 409:
         raise RuntimeError(
@@ -363,8 +366,11 @@ def process_worktree(issue: dict, issue_key: str, worktree_path: str, branch: st
         description_text = extract_text(issue["fields"].get("description"))
         body = f"Implements {issue_key}.\n\n{description_text}".strip()
 
+    reviewers_raw = db.get_setting("reviewers", "")
+    reviewers = [r.strip() for r in reviewers_raw.split(",") if r.strip()] if reviewers_raw else []
+
     print(f"[process] Creating PR: {workspace}/{repo_slug} {branch} -> {dest}")
-    pr = create_bitbucket_pr(workspace, repo_slug, title, body, branch, dest)
+    pr = create_bitbucket_pr(workspace, repo_slug, title, body, branch, dest, reviewers or None)
     html = (pr.get("links", {}).get("html") or {}).get("href", "")
     pr_id = str(pr.get("id", ""))
     print(f"[process] Pull request: {html or pr_id}")

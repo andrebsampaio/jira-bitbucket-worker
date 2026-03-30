@@ -162,6 +162,7 @@ SETTINGS_DEFAULTS = {
     "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
     "model": "",
     "effort": "medium",
+    "reviewers": "",
 }
 
 
