@@ -584,6 +584,7 @@ let logPanelLastId = 0;
 let logPollTimer = null;
 
 async function openLogPanel(issueKey) {
+  if (logPanelKey === issueKey) { closeLogPanel(); return; }
   const panel = $('log-panel');
   const body = $('log-panel-body');
   $('log-panel-key').textContent = issueKey;
