@@ -132,9 +132,9 @@ pip install -r requirements.txt
 
 ---
 
-## 5. Set Up HTTPS with Cloudflare Tunnel (Required for JIRA/Bitbucket Cloud)
+## 5. Optional for local set up: Use Cloudflare Tunnel
 
-JIRA Cloud and Bitbucket Cloud only send webhooks to HTTPS endpoints. Cloudflare Tunnel exposes your local server to the internet over HTTPS without opening firewall ports or managing certificates.
+Cloudflare Tunnel exposes your local server to the internet over HTTPS without opening firewall ports or managing certificates.
 
 ### Install cloudflared
 
