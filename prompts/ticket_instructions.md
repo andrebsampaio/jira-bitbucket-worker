@@ -6,7 +6,8 @@ It contains multiple repo directories (one per folder). Each repo is a git clone
    List the directories to find the right one(s).
 
 2. For each repo you need to work in, create a git worktree:
-   cd <repo-folder> && git fetch origin && git worktree add ../../worktrees/{key}-<short-slug> -b feature/{key}-<short-slug> origin/<default-branch>
+   Determine the branch prefix based on the issue type: use "bug" if the issue type is Bug, otherwise use "task".
+   cd <repo-folder> && git fetch origin && git worktree add ../../worktrees/{key}-<short-slug> -b <prefix>/{key}-<short-slug> origin/<default-branch>
    (create the worktrees/ directory under the workspace root if needed).
 
 3. Do all implementation, tests, and commits inside the worktree directory.
