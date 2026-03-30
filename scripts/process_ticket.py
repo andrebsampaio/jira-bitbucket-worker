@@ -102,6 +102,21 @@ def extract_text(adf_or_str) -> str:
 # Git helpers
 # ---------------------------------------------------------------------------
 
+def pull_all_repos(workspace: str) -> None:
+    """Pull latest changes on all git repos found directly under workspace."""
+    for entry in os.scandir(workspace):
+        if not entry.is_dir():
+            continue
+        if not os.path.isdir(os.path.join(entry.path, ".git")):
+            continue
+        print(f"[process] git pull in {entry.path}")
+        subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=entry.path,
+            check=False,
+        )
+
+
 def remove_worktree(worktree_dir: str) -> None:
     """Remove a worktree directory and prune the parent repo's worktree list."""
     # Resolve the parent repo from the worktree's .git file
@@ -381,6 +396,9 @@ def main():
         os.remove(RUN_MANIFEST)
     except FileNotFoundError:
         pass
+
+    # Pull latest changes before codex runs (codex has no internet access)
+    pull_all_repos(WORKSPACE_PATH)
 
     # Build prompt and run codex in the workspace root
     prompt = build_prompt(issue)
