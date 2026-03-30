@@ -997,21 +997,31 @@ function fmtDur(s) {
   return m ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-function normTs(ts) {
-  if (!ts) return null;
-  return ts.endsWith('Z') ? ts : ts + 'Z';
+/** API uses Unix seconds (numbers from SQLite); also accept ms or ISO strings. */
+function timeMs(ts) {
+  if (ts == null || ts === '') return NaN;
+  if (typeof ts === 'number') return ts < 1e12 ? ts * 1000 : ts;
+  const s = String(ts);
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = parseFloat(s);
+    return n < 1e12 ? n * 1000 : n;
+  }
+  const iso = s.endsWith('Z') ? s : s + 'Z';
+  return new Date(iso).getTime();
 }
 
 function fmtElapsed(ts) {
-  if (!ts) return '0s';
-  const s = Math.round((Date.now() - new Date(normTs(ts)).getTime()) / 1000);
+  const ms = timeMs(ts);
+  if (isNaN(ms)) return '0s';
+  const s = Math.round((Date.now() - ms) / 1000);
   const m = Math.floor(s / 60);
   return m ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
 function relTime(ts) {
-  if (!ts) return '—';
-  const s = (Date.now() - new Date(normTs(ts)).getTime()) / 1000;
+  const ms = timeMs(ts);
+  if (isNaN(ms)) return '—';
+  const s = (Date.now() - ms) / 1000;
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
@@ -1019,8 +1029,9 @@ function relTime(ts) {
 }
 
 function fmtTime(ts) {
-  if (!ts) return '';
-  const d = new Date(normTs(ts));
+  const ms = timeMs(ts);
+  if (isNaN(ms)) return '';
+  const d = new Date(ms);
   return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,'0')).join(':');
 }
 
@@ -1135,7 +1146,7 @@ function renderTerminal() {
   }
   el.innerHTML = logLines.map(l =>
     `<div class="log-row${l.stream === 'stderr' ? ' err' : ''}">` +
-    `<span class="log-ts">${fmtTime(l.timestamp)}</span>` +
+    `<span class="log-ts">${fmtTime(l.ts ?? l.timestamp)}</span>` +
     `<span class="log-txt">${esc(l.line)}</span></div>`
   ).join('');
   if (autoScroll) el.scrollTop = el.scrollHeight;
@@ -1177,7 +1188,7 @@ function renderStats(s) {
 function renderWebhook(wh) {
   if (!wh) return;
   document.getElementById('wh-last').textContent  = relTime(wh.last_received);
-  document.getElementById('wh-total').textContent = wh.total_count ?? '—';
+  document.getElementById('wh-total').textContent = wh.total_received ?? wh.total_count ?? '—';
   const fEl = document.getElementById('wh-fail');
   fEl.textContent = wh.sig_failures ?? '—';
   fEl.style.color = wh.sig_failures > 0 ? 'var(--red)' : 'var(--text-2)';
@@ -1206,8 +1217,8 @@ function renderTickets(tickets) {
   if (!tickets.length) { body.innerHTML = '<div class="empty">No tickets yet</div>'; return; }
 
   body.innerHTML = tickets.map(t => {
-    const dur = t.started_at && t.finished_at
-      ? (new Date(normTs(t.finished_at)) - new Date(normTs(t.started_at))) / 1000 : null;
+    const dur = t.started_at != null && t.finished_at != null
+      ? (timeMs(t.finished_at) - timeMs(t.started_at)) / 1000 : null;
     const pr  = prMap[t.issue_key];
     const open = t.issue_key === expandedKey;
 
@@ -1228,7 +1239,7 @@ function renderInlineLog(key) {
   return `<div class="inline-log">` +
     logs.map(l =>
       `<div class="${l.stream === 'stderr' ? 'err' : ''}">` +
-      `<span class="log-ts">${fmtTime(l.timestamp)}</span>${esc(l.line)}</div>`
+      `<span class="log-ts">${fmtTime(l.ts ?? l.timestamp)}</span>${esc(l.line)}</div>`
     ).join('') + `</div>`;
 }
 
@@ -1290,7 +1301,7 @@ function renderActivity(events) {
     `<div class="act-row">
       <span class="act-key">${esc(ev.issue_key||'\u2014')}</span>
       <span class="act-txt">${esc(ev.detail||ev.event_type||'')}</span>
-      <span class="act-when">${relTime(ev.timestamp)}</span>
+      <span class="act-when">${relTime(ev.ts ?? ev.timestamp)}</span>
     </div>`
   ).join('');
 }
@@ -1343,9 +1354,14 @@ function connectSSE() {
     try {
       const msg = JSON.parse(e.data);
       if (msg.issue_key !== currentKey) return;
-      logLines.push({ id: msg.id, timestamp: msg.timestamp, stream: msg.stream || 'stdout', line: msg.line });
+      logLines.push({
+        id: msg.id,
+        ts: msg.ts ?? msg.timestamp,
+        stream: msg.stream || 'stdout',
+        line: msg.line,
+      });
       if (logLines.length > MAX_LINES) logLines = logLines.slice(-MAX_LINES);
-      if (msg.id > logSinceId) logSinceId = msg.id;
+      if (msg.id != null && msg.id > logSinceId) logSinceId = msg.id;
       renderTerminal();
     } catch {}
   });

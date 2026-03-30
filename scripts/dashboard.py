@@ -117,7 +117,8 @@ def _api_logs(handler, issue_key: str):
                 since_id = int(param.split("=", 1)[1])
             except ValueError:
                 pass
-    _send_json(handler, db.get_ticket_logs(issue_key, since_id))
+    logs = db.get_ticket_logs(issue_key, since_id)
+    _send_json(handler, {"logs": logs})
 
 
 def _api_webhook_health(handler):
