@@ -893,6 +893,43 @@ header {
 }
 .cr-sprint.yes { color: var(--green); }
 .cr-sprint.no  { color: var(--text-3); }
+.cr-card.preview { border-color: var(--blue-line); }
+.cr-head.preview { background: var(--blue-dim); color: var(--blue); border-bottom-color: var(--blue-line); }
+
+.cr-preview-field { margin-bottom: 12px; }
+.cr-preview-field:last-child { margin-bottom: 0; }
+.cr-preview-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 5px;
+}
+.cr-preview-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13px;
+  padding: 7px 10px;
+  line-height: 1.5;
+  transition: border-color .15s;
+}
+.cr-preview-input:focus { outline: none; border-color: var(--blue-line); box-shadow: 0 0 0 3px rgba(129,140,248,.08); }
+.cr-preview-ta { resize: vertical; min-height: 110px; }
+
+.ct-confirm-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .cr-err-msg {
   font-family: var(--mono);
   font-size: 12px;
@@ -1162,7 +1199,7 @@ header {
     </div>
 
     <div class="settings-actions">
-      <button class="btn-primary" id="ct-submit" onclick="createTickets()">Create Tickets</button>
+      <button class="btn-primary" id="ct-submit" onclick="previewTickets()">Preview Tickets</button>
       <div class="btn-spinner" id="ct-spinner">
         <div class="spinner"></div>
         <span id="ct-spinner-label">Running Codex…</span>
@@ -1192,6 +1229,7 @@ const MAX_LINES = 600;
 
 // ── UTILS ──────────────────────────────────────────────────────
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escAttr = s => esc(s).replace(/"/g,'&quot;');
 
 function fmtDur(s) {
   if (!s || s < 0) return '—';
@@ -1675,7 +1713,7 @@ function renumberTickets() {
   });
   // Update submit button label
   const btn = document.getElementById('ct-submit');
-  if (btn) btn.textContent = single ? 'Create Ticket' : `Create ${items.length} Tickets`;
+  if (btn) btn.textContent = single ? 'Preview Ticket' : `Preview ${items.length} Tickets`;
 }
 
 function renderTicketResult(r, index, total) {
@@ -1709,7 +1747,9 @@ function renderTicketResult(r, index, total) {
   }
 }
 
-async function createTickets() {
+let ctPreviews = null; // null = no preview in progress; array = preview results
+
+async function previewTickets() {
   const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
   const descriptions = Array.from(document.querySelectorAll('#ct-list .ct-desc'))
     .map(ta => ta.value.trim())
@@ -1721,7 +1761,7 @@ async function createTickets() {
   }
 
   const submitBtn = document.getElementById('ct-submit');
-  const spinner   = document.getElementById('ct-spinner');
+  const spinner = document.getElementById('ct-spinner');
   const spinnerLabel = document.getElementById('ct-spinner-label');
   const resultsEl = document.getElementById('ct-results');
 
@@ -1733,15 +1773,117 @@ async function createTickets() {
   spinner.classList.add('show');
 
   try {
-    const resp = await fetch('/api/create-ticket', {
+    const resp = await fetch('/api/preview-ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_key: projectKey, descriptions }),
     });
     const data = await resp.json();
     const results = data.results || [];
+    ctPreviews = results;
+
+    const anyOk = results.some(r => r.ok);
+    const okCount = results.filter(r => r.ok).length;
+    let html = results.map((r, i) => renderPreviewCard(r, i, results.length)).join('');
+    if (anyOk) {
+      const label = okCount === 1 ? 'Create Ticket' : `Create ${okCount} Tickets`;
+      html += `<div class="ct-confirm-bar">` +
+        `<button class="btn-primary" onclick="confirmCreateTickets()">${label}</button>` +
+        `<button class="btn-ghost" onclick="cancelPreview()">Edit descriptions</button>` +
+      `</div>`;
+    }
+    resultsEl.innerHTML = html;
+  } catch (err) {
+    resultsEl.innerHTML =
+      `<div class="cr-card error">` +
+        `<div class="cr-head error">Request failed</div>` +
+        `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
+      `</div>`;
+    submitBtn.style.display = '';
+  } finally {
+    spinner.classList.remove('show');
+  }
+}
+
+function renderPreviewCard(r, index, total) {
+  const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
+  if (!r.ok) {
+    return `<div class="cr-card error">` +
+      `<div class="cr-head error">` +
+        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+        `${label} — enhancement failed` +
+      `</div>` +
+      `<div class="cr-body"><div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div></div>` +
+    `</div>`;
+  }
+  const p = r.preview;
+  return `<div class="cr-card preview">` +
+    `<div class="cr-head preview">` +
+      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>` +
+      `${label} — review &amp; edit` +
+    `</div>` +
+    `<div class="cr-body">` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Summary</div>` +
+        `<input class="cr-preview-input" id="ct-prev-summary-${index}" type="text" value="${escAttr(p.summary)}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Issue Type</div>` +
+        `<input class="cr-preview-input" id="ct-prev-type-${index}" type="text" value="${escAttr(p.issue_type || '')}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Components <em style="font-weight:400;text-transform:none;letter-spacing:0;font-style:normal">(comma-separated)</em></div>` +
+        `<input class="cr-preview-input" id="ct-prev-comps-${index}" type="text" value="${escAttr((p.components || []).join(', '))}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Description</div>` +
+        `<textarea class="cr-preview-input cr-preview-ta" id="ct-prev-desc-${index}">${esc(p.description || '')}</textarea>` +
+      `</div>` +
+    `</div>` +
+  `</div>`;
+}
+
+function cancelPreview() {
+  ctPreviews = null;
+  document.getElementById('ct-results').innerHTML = '';
+  document.getElementById('ct-submit').style.display = '';
+}
+
+async function confirmCreateTickets() {
+  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
+  const resultsEl = document.getElementById('ct-results');
+  const spinner = document.getElementById('ct-spinner');
+  const spinnerLabel = document.getElementById('ct-spinner-label');
+
+  if (!ctPreviews) return;
+
+  const tickets = ctPreviews.map((r, i) => {
+    if (!r.ok) return null;
+    return {
+      summary: document.getElementById(`ct-prev-summary-${i}`)?.value.trim() || '',
+      issue_type: document.getElementById(`ct-prev-type-${i}`)?.value.trim() || 'Story',
+      components: (document.getElementById(`ct-prev-comps-${i}`)?.value || '')
+        .split(',').map(s => s.trim()).filter(Boolean),
+      description: document.getElementById(`ct-prev-desc-${i}`)?.value.trim() || '',
+    };
+  }).filter(Boolean);
+
+  if (!tickets.length) return;
+
+  spinnerLabel.textContent = tickets.length === 1 ? 'Creating ticket…' : `Creating ${tickets.length} tickets…`;
+  spinner.classList.add('show');
+  resultsEl.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/create-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_key: projectKey, tickets }),
+    });
+    const data = await resp.json();
+    const results = data.results || [];
+    ctPreviews = null;
     resultsEl.innerHTML = results.map((r, i) => renderTicketResult(r, i, results.length)).join('');
-    // Clear successfully created ticket inputs
     const items = Array.from(document.querySelectorAll('#ct-list .ct-item'));
     results.forEach((r, i) => {
       if (r.ok && items[i]) items[i].querySelector('textarea').value = '';
@@ -1754,7 +1896,8 @@ async function createTickets() {
       `</div>`;
   } finally {
     spinner.classList.remove('show');
-    submitBtn.style.display = '';
+    document.getElementById('ct-submit').style.display = '';
+    renumberTickets();
   }
 }
 

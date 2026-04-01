@@ -21,6 +21,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         post_routes = {
             "/api/settings": _api_settings_save,
             "/api/cancel": _api_cancel,
+            "/api/preview-ticket": _api_preview_ticket,
             "/api/create-ticket": _api_create_ticket,
         }
         route_fn = post_routes.get(path)
@@ -202,7 +203,7 @@ def _api_jira_projects(handler):
         _send_json(handler, {"projects": [], "error": str(exc)})
 
 
-def _api_create_ticket(handler):
+def _api_preview_ticket(handler):
     content_length = int(handler.headers.get("Content-Length", 0))
     body = handler.rfile.read(content_length)
     try:
@@ -222,13 +223,52 @@ def _api_create_ticket(handler):
         handler.wfile.write(json.dumps({"error": "project_key and descriptions are required"}).encode())
         return
 
-    from scripts.create_ticket_ai import create_ticket_from_description
-    db.set_setting("create_ticket_project_key", project_key)
+    from scripts.create_ticket_ai import enhance_ticket_description
 
     results = []
     for description in descriptions:
         try:
-            result = create_ticket_from_description(project_key, description)
+            preview = enhance_ticket_description(project_key, description)
+            results.append({"ok": True, "preview": preview})
+        except Exception as exc:
+            results.append({"ok": False, "error": str(exc)})
+
+    _send_json(handler, {"ok": True, "results": results})
+
+
+def _api_create_ticket(handler):
+    content_length = int(handler.headers.get("Content-Length", 0))
+    body = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        handler.send_response(400)
+        handler.end_headers()
+        return
+
+    project_key = payload.get("project_key", "").strip()
+    tickets = payload.get("tickets", [])
+
+    if not project_key or not tickets:
+        handler.send_response(400)
+        handler.send_header("Content-Type", "application/json")
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": "project_key and tickets are required"}).encode())
+        return
+
+    from scripts.create_ticket_ai import create_ticket_from_enhanced
+    db.set_setting("create_ticket_project_key", project_key)
+
+    results = []
+    for ticket in tickets:
+        try:
+            result = create_ticket_from_enhanced(
+                project_key=project_key,
+                summary=ticket.get("summary", "").strip(),
+                description=ticket.get("description", "").strip(),
+                issue_type=ticket.get("issue_type", "Story").strip(),
+                components=[c for c in ticket.get("components", []) if c],
+            )
             db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
             results.append({"ok": True, "result": result})
         except Exception as exc:

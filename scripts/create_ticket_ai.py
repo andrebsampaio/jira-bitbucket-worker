@@ -225,6 +225,63 @@ def _enhance_with_codex(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def enhance_ticket_description(project_key: str, raw_description: str) -> dict:
+    """
+    Step 1 of the two-step flow: run Codex to enhance the description and
+    return the structured fields WITHOUT creating the ticket.
+
+    Returns a dict with: summary, issue_type, components, description,
+    available_components, available_issue_types.
+    """
+    components = get_project_components(project_key)
+    issue_types = get_issue_types(project_key)
+    enhanced = _enhance_with_codex(raw_description, components, issue_types)
+    return {
+        **enhanced,
+        "available_components": components,
+        "available_issue_types": issue_types,
+    }
+
+
+def create_ticket_from_enhanced(
+    project_key: str,
+    summary: str,
+    description: str,
+    issue_type: str,
+    components: list[str],
+) -> dict:
+    """
+    Step 2 of the two-step flow: create the JIRA ticket from pre-enhanced
+    (and possibly user-edited) data. Skips the Codex enhancement step.
+    """
+    issue_key = create_jira_ticket(
+        project_key=project_key,
+        summary=summary,
+        description_text=description,
+        issue_type=issue_type,
+        component_names=components,
+    )
+
+    sprint_id = get_active_sprint_id(project_key)
+    added_to_sprint = False
+    if sprint_id:
+        try:
+            add_to_sprint(sprint_id, issue_key)
+            added_to_sprint = True
+        except Exception:
+            pass
+
+    return {
+        "issue_key": issue_key,
+        "issue_url": f"{JIRA_URL}/browse/{issue_key}",
+        "summary": summary,
+        "description": description,
+        "issue_type": issue_type,
+        "components": components,
+        "added_to_sprint": added_to_sprint,
+    }
+
+
 def create_ticket_from_description(project_key: str, raw_description: str) -> dict:
     """
     Full pipeline:
