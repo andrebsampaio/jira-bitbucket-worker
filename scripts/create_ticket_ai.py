@@ -71,7 +71,6 @@ def create_jira_ticket(
     summary: str,
     description_text: str,
     issue_type: str,
-    priority: str,
     component_names: list[str],
 ) -> str:
     """Create a JIRA ticket and return its key."""
@@ -81,7 +80,6 @@ def create_jira_ticket(
             "summary": summary,
             "description": _text_to_adf(description_text),
             "issuetype": {"name": issue_type},
-            "priority": {"name": priority},
         }
     }
     if component_names:
@@ -139,26 +137,28 @@ def _enhance_with_codex(
     components: list[str],
     issue_types: list[str],
 ) -> dict:
-    """Run Codex to turn a raw description into structured ticket fields."""
-    output_path = os.path.join(WORKSPACE_PATH, ".ticket_draft.json")
+    """Run Codex to turn a raw description into structured ticket fields.
+
+    Outputs two files to avoid JSON encoding issues with multi-line descriptions:
+      .ticket_draft_meta.json  — summary, issue_type, components (simple values)
+      .ticket_draft_desc.txt   — full description as plain text
+    """
+    meta_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_meta.json")
+    desc_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_desc.txt")
 
     components_str = ", ".join(components) if components else "none"
     types_str = ", ".join(issue_types) if issue_types else "Story, Bug, Task"
 
-    prompt = (
-        f"You are a technical product manager. Analyse the following raw ticket description "
-        f"and write a structured JIRA ticket as JSON to the file: {output_path}\n\n"
-        f"Available components: {components_str}\n"
-        f"Available issue types: {types_str}\n\n"
-        f"Raw description:\n{raw_description}\n\n"
-        f"Write exactly this JSON structure to {output_path} (no other output):\n"
-        "{{\n"
-        '  "summary": "concise title (max 100 chars)",\n'
-        '  "description": "improved description with context, technical details, and acceptance criteria (plain text, paragraphs separated by blank lines)",\n'
-        '  "issue_type": "one of the available issue types",\n'
-        '  "priority": "Highest|High|Medium|Low|Lowest",\n'
-        '  "components": ["array of component names from the available list — may be empty"]\n'
-        "}}"
+    _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+    with open(os.path.join(_prompts_dir, "create_ticket.md"), encoding="utf-8") as f:
+        prompt_tpl = f.read()
+
+    prompt = prompt_tpl.format(
+        components=components_str,
+        issue_types=types_str,
+        raw_description=raw_description,
+        meta_path=meta_path,
+        desc_path=desc_path,
     )
 
     # Build codex command mirroring the pattern in process_ticket.py
@@ -172,11 +172,12 @@ def _enhance_with_codex(
         cmd += ["-c", f"reasoning_effort={effort}"]
     cmd.append(prompt)
 
-    # Remove stale output file before running
-    try:
-        os.remove(output_path)
-    except FileNotFoundError:
-        pass
+    # Remove stale output files before running
+    for path in (meta_path, desc_path):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 
     result = subprocess.run(
         cmd,
@@ -190,21 +191,34 @@ def _enhance_with_codex(
             f"Codex exited with code {result.returncode}:\n{result.stderr or result.stdout}"
         )
 
-    if not os.path.isfile(output_path):
+    if not os.path.isfile(meta_path):
         raise RuntimeError(
-            f"Codex did not write the expected output file: {output_path}\n"
+            f"Codex did not write the expected metadata file: {meta_path}\n"
+            f"stdout: {result.stdout[:500]}"
+        )
+    if not os.path.isfile(desc_path):
+        raise RuntimeError(
+            f"Codex did not write the expected description file: {desc_path}\n"
             f"stdout: {result.stdout[:500]}"
         )
 
-    with open(output_path, encoding="utf-8") as f:
-        data = json.load(f)
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    with open(desc_path, encoding="utf-8") as f:
+        description = f.read().strip()
 
-    try:
-        os.remove(output_path)
-    except FileNotFoundError:
-        pass
+    for path in (meta_path, desc_path):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 
-    return data
+    return {
+        "summary": meta["summary"],
+        "issue_type": meta.get("issue_type"),
+        "components": meta.get("components", []),
+        "description": description,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +245,6 @@ def create_ticket_from_description(project_key: str, raw_description: str) -> di
         summary=enhanced["summary"],
         description_text=enhanced["description"],
         issue_type=enhanced.get("issue_type", issue_types[0] if issue_types else "Story"),
-        priority=enhanced.get("priority", "Medium"),
         component_names=enhanced.get("components", []),
     )
 
@@ -250,7 +263,6 @@ def create_ticket_from_description(project_key: str, raw_description: str) -> di
         "summary": enhanced["summary"],
         "description": enhanced["description"],
         "issue_type": enhanced.get("issue_type"),
-        "priority": enhanced.get("priority"),
         "components": enhanced.get("components", []),
         "added_to_sprint": added_to_sprint,
     }

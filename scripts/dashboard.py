@@ -213,28 +213,28 @@ def _api_create_ticket(handler):
         return
 
     project_key = payload.get("project_key", "").strip()
-    description = payload.get("description", "").strip()
+    descriptions = [d.strip() for d in payload.get("descriptions", []) if d.strip()]
 
-    if not project_key or not description:
+    if not project_key or not descriptions:
         handler.send_response(400)
         handler.send_header("Content-Type", "application/json")
         handler.end_headers()
-        handler.wfile.write(json.dumps({"error": "project_key and description are required"}).encode())
+        handler.wfile.write(json.dumps({"error": "project_key and descriptions are required"}).encode())
         return
 
-    try:
-        from scripts.create_ticket_ai import create_ticket_from_description
-        result = create_ticket_from_description(project_key, description)
-        # Persist the project key for next time
-        db.set_setting("create_ticket_project_key", project_key)
-        db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
-        _send_json(handler, {"ok": True, "result": result})
-    except Exception as exc:
-        handler.send_response(500)
-        handler.send_header("Content-Type", "application/json")
-        handler.send_header("Access-Control-Allow-Origin", "*")
-        handler.end_headers()
-        handler.wfile.write(json.dumps({"ok": False, "error": str(exc)}).encode())
+    from scripts.create_ticket_ai import create_ticket_from_description
+    db.set_setting("create_ticket_project_key", project_key)
+
+    results = []
+    for description in descriptions:
+        try:
+            result = create_ticket_from_description(project_key, description)
+            db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
+            results.append({"ok": True, "result": result})
+        except Exception as exc:
+            results.append({"ok": False, "error": str(exc)})
+
+    _send_json(handler, {"ok": True, "results": results})
 
 
 def _api_stream(handler):

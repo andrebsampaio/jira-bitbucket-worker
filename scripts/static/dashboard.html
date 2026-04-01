@@ -767,65 +767,128 @@ header {
   padding: 28px 24px 48px;
 }
 
-.create-result {
-  display: none;
-  margin-top: 20px;
+.ct-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+
+.ct-item {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r3);
+  border-radius: var(--r2);
   overflow: hidden;
 }
-.create-result.show { display: block; }
-.create-result.success { border-color: var(--green-line); }
-.create-result.error   { border-color: var(--red-line); }
+
+.ct-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ct-item-num {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.ct-item-remove {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 2px 7px;
+  border-radius: var(--r);
+  border: 1px solid var(--border-hi);
+  background: none;
+  transition: color .15s, background .15s;
+}
+.ct-item-remove:hover { color: var(--red); background: var(--red-dim); border-color: var(--red-line); }
+
+.ct-item .form-ta {
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
+  resize: vertical;
+  min-height: 90px;
+}
+.ct-item .form-ta:focus { border-color: transparent; box-shadow: none; outline: none; }
+
+.btn-add-ticket {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 7px 12px;
+  border-radius: var(--r);
+  border: 1px dashed var(--border-hi);
+  width: 100%;
+  justify-content: center;
+  transition: color .15s, border-color .15s, background .15s;
+  margin-bottom: 16px;
+}
+.btn-add-ticket:hover { color: var(--text); border-color: var(--amber-line); background: var(--amber-dim); }
+
+.cr-list { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+
+.cr-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.cr-card.success { border-color: var(--green-line); }
+.cr-card.error   { border-color: var(--red-line); }
 
 .cr-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
-.cr-head.success { background: var(--green-dim); color: var(--green); }
-.cr-head.error   { background: var(--red-dim); color: var(--red); }
+.cr-head.success { background: var(--green-dim); color: var(--green); border-bottom-color: var(--green-line); }
+.cr-head.error   { background: var(--red-dim); color: var(--red); border-bottom-color: var(--red-line); }
 
 .cr-body { padding: 14px 16px; }
 
 .cr-key {
   font-family: var(--mono);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--amber);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .cr-summary {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .cr-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .cr-desc {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-2);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
   background: var(--surface-2);
   border-radius: var(--r);
   border: 1px solid var(--border);
 }
 .cr-sprint {
-  font-size: 12px;
+  font-size: 11.5px;
   font-family: var(--mono);
 }
 .cr-sprint.yes { color: var(--green); }
@@ -1082,7 +1145,7 @@ header {
 <!-- ══════════════════ CREATE TICKET ══════════════════ -->
 <div class="page" id="page-create">
   <div class="settings-group">
-    <div class="sg-title">Create JIRA Ticket</div>
+    <div class="sg-title">Create JIRA Tickets</div>
 
     <div class="form-row">
       <label class="form-lbl" for="ct-project">Project Key</label>
@@ -1090,23 +1153,24 @@ header {
     </div>
 
     <div class="form-row">
-      <label class="form-lbl" for="ct-desc">Description <em>raw — Codex will improve it</em></label>
-      <textarea id="ct-desc" class="form-ta" rows="10" placeholder="Describe what needs to be done. Be as rough or detailed as you like — Codex will generate a proper title, description, components, and priority."></textarea>
+      <label class="form-lbl">Tickets <em>Codex will generate titles, descriptions &amp; components</em></label>
+      <div class="ct-list" id="ct-list"></div>
+      <button class="btn-add-ticket" onclick="addTicketInput()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add ticket
+      </button>
     </div>
 
     <div class="settings-actions">
-      <button class="btn-primary" id="ct-submit" onclick="createTicket()">Create Ticket</button>
+      <button class="btn-primary" id="ct-submit" onclick="createTickets()">Create Tickets</button>
       <div class="btn-spinner" id="ct-spinner">
         <div class="spinner"></div>
-        Running Codex…
+        <span id="ct-spinner-label">Running Codex…</span>
       </div>
     </div>
   </div>
 
-  <div class="create-result" id="ct-result">
-    <div class="cr-head" id="ct-result-head"></div>
-    <div class="cr-body" id="ct-result-body"></div>
-  </div>
+  <div class="cr-list" id="ct-results"></div>
 </div>
 
 <script>
@@ -1566,7 +1630,10 @@ function ins(id, text) {
 }
 
 // ── CREATE TICKET ──────────────────────────────────────────────
+let ctNextId = 0;
+
 async function loadCreatePage() {
+  if (document.getElementById('ct-list').children.length === 0) addTicketInput();
   const data = await api('/api/settings');
   if (data?.settings?.create_ticket_project_key) {
     const el = document.getElementById('ct-project');
@@ -1574,66 +1641,117 @@ async function loadCreatePage() {
   }
 }
 
-async function createTicket() {
-  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
-  const description = document.getElementById('ct-desc').value.trim();
-  const resultEl = document.getElementById('ct-result');
-  const headEl   = document.getElementById('ct-result-head');
-  const bodyEl   = document.getElementById('ct-result-body');
-  const submitBtn = document.getElementById('ct-submit');
-  const spinner   = document.getElementById('ct-spinner');
+function addTicketInput() {
+  const id = ctNextId++;
+  const list = document.getElementById('ct-list');
+  const div = document.createElement('div');
+  div.className = 'ct-item';
+  div.id = `ct-item-${id}`;
+  div.innerHTML =
+    `<div class="ct-item-head">` +
+      `<span class="ct-item-num" id="ct-num-${id}"></span>` +
+      `<button class="ct-item-remove" onclick="removeTicketInput(${id})">Remove</button>` +
+    `</div>` +
+    `<textarea class="form-ta ct-desc" rows="5" placeholder="Describe what needs to be done. Be as rough or detailed as you like."></textarea>`;
+  list.appendChild(div);
+  renumberTickets();
+  div.querySelector('textarea').focus();
+}
 
-  if (!projectKey || !description) {
-    alert('Please fill in the project key and description.');
+function removeTicketInput(id) {
+  const el = document.getElementById(`ct-item-${id}`);
+  if (el) el.remove();
+  renumberTickets();
+}
+
+function renumberTickets() {
+  const items = document.querySelectorAll('#ct-list .ct-item');
+  const single = items.length === 1;
+  items.forEach((item, i) => {
+    const numEl = item.querySelector('.ct-item-num');
+    if (numEl) numEl.textContent = single ? 'Description' : `Ticket ${i + 1}`;
+    const removeBtn = item.querySelector('.ct-item-remove');
+    if (removeBtn) removeBtn.style.display = single ? 'none' : '';
+  });
+  // Update submit button label
+  const btn = document.getElementById('ct-submit');
+  if (btn) btn.textContent = single ? 'Create Ticket' : `Create ${items.length} Tickets`;
+}
+
+function renderTicketResult(r, index, total) {
+  const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
+  if (r.ok && r.result) {
+    const t = r.result;
+    const comps = (t.components || []).map(c => `<span class="chip">${esc(c)}</span>`).join('');
+    return `<div class="cr-card success">` +
+      `<div class="cr-head success">` +
+        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>` +
+        `${label} created` +
+      `</div>` +
+      `<div class="cr-body">` +
+        `<div class="cr-key"><a href="${esc(t.issue_url)}" target="_blank">${esc(t.issue_key)}</a></div>` +
+        `<div class="cr-summary">${esc(t.summary)}</div>` +
+        `<div class="cr-meta">${t.issue_type ? `<span class="chip">${esc(t.issue_type)}</span>` : ''}${comps}</div>` +
+        `<div class="cr-desc">${esc(t.description)}</div>` +
+        `<div class="cr-sprint ${t.added_to_sprint ? 'yes' : 'no'}">` +
+          (t.added_to_sprint ? '✓ Added to active sprint' : '— No active sprint found') +
+        `</div>` +
+      `</div>` +
+    `</div>`;
+  } else {
+    return `<div class="cr-card error">` +
+      `<div class="cr-head error">` +
+        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+        `${label} failed` +
+      `</div>` +
+      `<div class="cr-body"><div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div></div>` +
+    `</div>`;
+  }
+}
+
+async function createTickets() {
+  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
+  const descriptions = Array.from(document.querySelectorAll('#ct-list .ct-desc'))
+    .map(ta => ta.value.trim())
+    .filter(Boolean);
+
+  if (!projectKey || !descriptions.length) {
+    alert('Please fill in the project key and at least one description.');
     return;
   }
 
-  resultEl.className = 'create-result';
+  const submitBtn = document.getElementById('ct-submit');
+  const spinner   = document.getElementById('ct-spinner');
+  const spinnerLabel = document.getElementById('ct-spinner-label');
+  const resultsEl = document.getElementById('ct-results');
+
+  resultsEl.innerHTML = '';
   submitBtn.style.display = 'none';
+  spinnerLabel.textContent = descriptions.length === 1
+    ? 'Running Codex…'
+    : `Running Codex for ${descriptions.length} tickets…`;
   spinner.classList.add('show');
 
   try {
     const resp = await fetch('/api/create-ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project_key: projectKey, description }),
+      body: JSON.stringify({ project_key: projectKey, descriptions }),
     });
     const data = await resp.json();
-
-    if (data.ok && data.result) {
-      const r = data.result;
-      headEl.className = 'cr-head success';
-      headEl.innerHTML =
-        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>` +
-        `Ticket created`;
-      const comps = (r.components || []).map(c => `<span class="chip">${esc(c)}</span>`).join('');
-      bodyEl.innerHTML =
-        `<div class="cr-key"><a href="${esc(r.issue_url)}" target="_blank">${esc(r.issue_key)}</a></div>` +
-        `<div class="cr-summary">${esc(r.summary)}</div>` +
-        `<div class="cr-meta">` +
-          (r.issue_type ? `<span class="chip">${esc(r.issue_type)}</span>` : '') +
-          (r.priority   ? `<span class="chip">${esc(r.priority)}</span>` : '') +
-          comps +
-        `</div>` +
-        `<div class="cr-desc">${esc(r.description)}</div>` +
-        `<div class="cr-sprint ${r.added_to_sprint ? 'yes' : 'no'}">` +
-          (r.added_to_sprint ? '✓ Added to active sprint' : '— No active sprint found') +
-        `</div>`;
-      resultEl.className = 'create-result show success';
-      document.getElementById('ct-desc').value = '';
-    } else {
-      headEl.className = 'cr-head error';
-      headEl.innerHTML =
-        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
-        `Failed to create ticket`;
-      bodyEl.innerHTML = `<div class="cr-err-msg">${esc(data.error || 'Unknown error')}</div>`;
-      resultEl.className = 'create-result show error';
-    }
+    const results = data.results || [];
+    resultsEl.innerHTML = results.map((r, i) => renderTicketResult(r, i, results.length)).join('');
+    // Clear successfully created ticket inputs
+    const items = Array.from(document.querySelectorAll('#ct-list .ct-item'));
+    results.forEach((r, i) => {
+      if (r.ok && items[i]) items[i].querySelector('textarea').value = '';
+    });
   } catch (err) {
-    headEl.className = 'cr-head error';
-    headEl.textContent = 'Request failed';
-    bodyEl.innerHTML = `<div class="cr-err-msg">${esc(String(err))}</div>`;
-    resultEl.className = 'create-result show error';
+    resultsEl.innerHTML =
+      `<div class="cr-card error">` +
+        `<div class="cr-head error">Request failed</div>` +
+        `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
+      `</div>`;
   } finally {
     spinner.classList.remove('show');
     submitBtn.style.display = '';
