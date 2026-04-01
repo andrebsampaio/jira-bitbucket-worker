@@ -22,6 +22,15 @@ JIRA_USER = os.environ["JIRA_USER"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 WORKSPACE_PATH = os.environ.get("WORKSPACE_PATH", tempfile.gettempdir())
 
+# Directory of this project (a git repo, so Codex --full-auto can write files here)
+_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Codex temp outputs (gitignored); not the workspace root — see _enhance_with_codex docstring
+_TICKET_DRAFT_DIR = os.path.join(_PROJECT_DIR, ".ticket_draft")
+
+
+def _ensure_ticket_draft_dir() -> None:
+    os.makedirs(_TICKET_DRAFT_DIR, exist_ok=True)
+
 # ---------------------------------------------------------------------------
 # Cancellable subprocess slot for preview runs
 # ---------------------------------------------------------------------------
@@ -55,7 +64,7 @@ def cancel_preview() -> bool:
 _PREVIEW_LOG_KEY = "__preview__"
 
 
-def _run_codex(cmd: list[str]) -> subprocess.CompletedProcess:
+def _run_codex(cmd: list[str], cwd: str = WORKSPACE_PATH) -> subprocess.CompletedProcess:
     """Run a Codex command, streaming each output line to the DB log and storing
     the process reference so it can be cancelled."""
     from scripts import db
@@ -65,7 +74,7 @@ def _run_codex(cmd: list[str]) -> subprocess.CompletedProcess:
 
     proc = subprocess.Popen(
         cmd,
-        cwd=WORKSPACE_PATH,
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -227,7 +236,7 @@ def _gather_code_context(raw_description: str, repos: str = "") -> str:
     """Run Codex to find code relevant to the ticket description and return a summary."""
     from scripts import db
 
-    context_path = os.path.join(WORKSPACE_PATH, ".ticket_code_context.txt")
+    context_path = os.path.join(_TICKET_DRAFT_DIR, "code_context.txt")
 
     prompt_tpl = db.get_setting("prompt_code_context", "")
     if not prompt_tpl:
@@ -253,7 +262,8 @@ def _gather_code_context(raw_description: str, repos: str = "") -> str:
     except FileNotFoundError:
         pass
 
-    result = _run_codex(cmd)
+    _ensure_ticket_draft_dir()
+    result = _run_codex(cmd, cwd=_PROJECT_DIR)
 
     if result.returncode != 0 or not os.path.isfile(context_path):
         return ""
@@ -277,14 +287,18 @@ def _enhance_with_codex(
 ) -> dict:
     """Run Codex to turn a raw description into structured ticket fields.
 
-    Outputs two files to avoid JSON encoding issues with multi-line descriptions:
-      .ticket_draft_meta.json  — summary, issue_type, components (simple values)
-      .ticket_draft_desc.txt   — full description as plain text
+    Writes under ``.ticket_draft/`` (project root, gitignored) to avoid JSON
+    encoding issues with multi-line descriptions:
+      meta.json  — summary, issue_type, components (simple values)
+      desc.txt   — full description as plain text
     """
     from scripts import db
 
-    meta_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_meta.json")
-    desc_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_desc.txt")
+    # Use the project dir (a git repo) so Codex's sandbox can write these files.
+    # WORKSPACE_PATH is typically a non-git parent directory of multiple repos,
+    # which Codex's --full-auto sandbox blocks writes to.
+    meta_path = os.path.join(_TICKET_DRAFT_DIR, "meta.json")
+    desc_path = os.path.join(_TICKET_DRAFT_DIR, "desc.txt")
 
     components_str = ", ".join(components) if components else "none"
     types_str = ", ".join(issue_types) if issue_types else "Story, Bug, Task"
@@ -342,7 +356,8 @@ def _enhance_with_codex(
         except FileNotFoundError:
             pass
 
-    result = _run_codex(cmd)
+    _ensure_ticket_draft_dir()
+    result = _run_codex(cmd, cwd=_PROJECT_DIR)
     if result.returncode != 0:
         raise RuntimeError(
             f"Codex exited with code {result.returncode}:\n{result.stderr or result.stdout}"

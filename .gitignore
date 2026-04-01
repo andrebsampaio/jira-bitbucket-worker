@@ -63,3 +63,6 @@ logs/
 dashboard.db
 dashboard.db-wal
 dashboard.db-shm
+
+# create_ticket_ai.py Codex temp outputs
+.ticket_draft/
