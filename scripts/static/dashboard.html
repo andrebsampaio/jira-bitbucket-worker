@@ -760,6 +760,104 @@ header {
 .toast.show { display: flex; animation: fade-toast 2.5s ease forwards; }
 @keyframes fade-toast { 0%,60%{opacity:1} 100%{opacity:0} }
 
+/* ── CREATE TICKET PAGE ─────────────────────────────────────── */
+#page-create {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+
+.create-result {
+  display: none;
+  margin-top: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+.create-result.show { display: block; }
+.create-result.success { border-color: var(--green-line); }
+.create-result.error   { border-color: var(--red-line); }
+
+.cr-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cr-head.success { background: var(--green-dim); color: var(--green); }
+.cr-head.error   { background: var(--red-dim); color: var(--red); }
+
+.cr-body { padding: 14px 16px; }
+
+.cr-key {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.cr-summary {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.cr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.cr-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+.cr-sprint {
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.cr-sprint.yes { color: var(--green); }
+.cr-sprint.no  { color: var(--text-3); }
+.cr-err-msg {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--red);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.55;
+}
+
+.btn-spinner {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 8px 18px;
+}
+.btn-spinner.show { display: flex; }
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border-hi);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 860px) {
   .dash-grid { grid-template-columns: 1fr; }
@@ -782,6 +880,7 @@ header {
     <span class="logo-name">Worker</span>
   </div>
   <button class="nav-btn active" onclick="showPage('dashboard', this)">Dashboard</button>
+  <button class="nav-btn" onclick="showPage('create', this)">+ Ticket</button>
   <button class="nav-btn" onclick="showPage('settings', this)">Settings</button>
   <div class="header-spacer"></div>
   <div class="conn-pill">
@@ -980,6 +1079,36 @@ header {
   </div>
 </div>
 
+<!-- ══════════════════ CREATE TICKET ══════════════════ -->
+<div class="page" id="page-create">
+  <div class="settings-group">
+    <div class="sg-title">Create JIRA Ticket</div>
+
+    <div class="form-row">
+      <label class="form-lbl" for="ct-project">Project Key</label>
+      <input type="text" id="ct-project" class="form-input" placeholder="e.g. ENG" style="max-width:160px">
+    </div>
+
+    <div class="form-row">
+      <label class="form-lbl" for="ct-desc">Description <em>raw — Codex will improve it</em></label>
+      <textarea id="ct-desc" class="form-ta" rows="10" placeholder="Describe what needs to be done. Be as rough or detailed as you like — Codex will generate a proper title, description, components, and priority."></textarea>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn-primary" id="ct-submit" onclick="createTicket()">Create Ticket</button>
+      <div class="btn-spinner" id="ct-spinner">
+        <div class="spinner"></div>
+        Running Codex…
+      </div>
+    </div>
+  </div>
+
+  <div class="create-result" id="ct-result">
+    <div class="cr-head" id="ct-result-head"></div>
+    <div class="cr-body" id="ct-result-body"></div>
+  </div>
+</div>
+
 <script>
 // ── STATE ──────────────────────────────────────────────────────
 let currentKey  = null;
@@ -1057,6 +1186,7 @@ function showPage(id, btn) {
   document.getElementById('page-' + id).classList.add('active');
   btn.classList.add('active');
   if (id === 'settings') loadSettings();
+  if (id === 'create') loadCreatePage();
 }
 
 function switchTab(id, btn) {
@@ -1433,6 +1563,81 @@ function ins(id, text) {
   el.value = el.value.slice(0, s) + text + el.value.slice(e);
   el.selectionStart = el.selectionEnd = s + text.length;
   el.focus();
+}
+
+// ── CREATE TICKET ──────────────────────────────────────────────
+async function loadCreatePage() {
+  const data = await api('/api/settings');
+  if (data?.settings?.create_ticket_project_key) {
+    const el = document.getElementById('ct-project');
+    if (!el.value) el.value = data.settings.create_ticket_project_key;
+  }
+}
+
+async function createTicket() {
+  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
+  const description = document.getElementById('ct-desc').value.trim();
+  const resultEl = document.getElementById('ct-result');
+  const headEl   = document.getElementById('ct-result-head');
+  const bodyEl   = document.getElementById('ct-result-body');
+  const submitBtn = document.getElementById('ct-submit');
+  const spinner   = document.getElementById('ct-spinner');
+
+  if (!projectKey || !description) {
+    alert('Please fill in the project key and description.');
+    return;
+  }
+
+  resultEl.className = 'create-result';
+  submitBtn.style.display = 'none';
+  spinner.classList.add('show');
+
+  try {
+    const resp = await fetch('/api/create-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_key: projectKey, description }),
+    });
+    const data = await resp.json();
+
+    if (data.ok && data.result) {
+      const r = data.result;
+      headEl.className = 'cr-head success';
+      headEl.innerHTML =
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>` +
+        `Ticket created`;
+      const comps = (r.components || []).map(c => `<span class="chip">${esc(c)}</span>`).join('');
+      bodyEl.innerHTML =
+        `<div class="cr-key"><a href="${esc(r.issue_url)}" target="_blank">${esc(r.issue_key)}</a></div>` +
+        `<div class="cr-summary">${esc(r.summary)}</div>` +
+        `<div class="cr-meta">` +
+          (r.issue_type ? `<span class="chip">${esc(r.issue_type)}</span>` : '') +
+          (r.priority   ? `<span class="chip">${esc(r.priority)}</span>` : '') +
+          comps +
+        `</div>` +
+        `<div class="cr-desc">${esc(r.description)}</div>` +
+        `<div class="cr-sprint ${r.added_to_sprint ? 'yes' : 'no'}">` +
+          (r.added_to_sprint ? '✓ Added to active sprint' : '— No active sprint found') +
+        `</div>`;
+      resultEl.className = 'create-result show success';
+      document.getElementById('ct-desc').value = '';
+    } else {
+      headEl.className = 'cr-head error';
+      headEl.innerHTML =
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+        `Failed to create ticket`;
+      bodyEl.innerHTML = `<div class="cr-err-msg">${esc(data.error || 'Unknown error')}</div>`;
+      resultEl.className = 'create-result show error';
+    }
+  } catch (err) {
+    headEl.className = 'cr-head error';
+    headEl.textContent = 'Request failed';
+    bodyEl.innerHTML = `<div class="cr-err-msg">${esc(String(err))}</div>`;
+    resultEl.className = 'create-result show error';
+  } finally {
+    spinner.classList.remove('show');
+    submitBtn.style.display = '';
+  }
 }
 
 // ── INIT ───────────────────────────────────────────────────────

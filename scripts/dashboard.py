@@ -21,6 +21,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         post_routes = {
             "/api/settings": _api_settings_save,
             "/api/cancel": _api_cancel,
+            "/api/create-ticket": _api_create_ticket,
         }
         route_fn = post_routes.get(path)
         if route_fn:
@@ -41,6 +42,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         "/api/webhook-health": _api_webhook_health,
         "/api/settings": _api_settings_get,
         "/api/stream": _api_stream,
+        "/api/jira-projects": _api_jira_projects,
     }
 
     route_fn = routes.get(path)
@@ -189,6 +191,50 @@ def _api_settings_save(handler):
     for key, value in settings.items():
         db.set_setting(key, value)
     _send_json(handler, {"ok": True})
+
+
+def _api_jira_projects(handler):
+    try:
+        from scripts.create_ticket_ai import get_projects
+        projects = get_projects()
+        _send_json(handler, {"projects": projects})
+    except Exception as exc:
+        _send_json(handler, {"projects": [], "error": str(exc)})
+
+
+def _api_create_ticket(handler):
+    content_length = int(handler.headers.get("Content-Length", 0))
+    body = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        handler.send_response(400)
+        handler.end_headers()
+        return
+
+    project_key = payload.get("project_key", "").strip()
+    description = payload.get("description", "").strip()
+
+    if not project_key or not description:
+        handler.send_response(400)
+        handler.send_header("Content-Type", "application/json")
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": "project_key and description are required"}).encode())
+        return
+
+    try:
+        from scripts.create_ticket_ai import create_ticket_from_description
+        result = create_ticket_from_description(project_key, description)
+        # Persist the project key for next time
+        db.set_setting("create_ticket_project_key", project_key)
+        db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
+        _send_json(handler, {"ok": True, "result": result})
+    except Exception as exc:
+        handler.send_response(500)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"ok": False, "error": str(exc)}).encode())
 
 
 def _api_stream(handler):
