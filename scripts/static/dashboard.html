@@ -1698,9 +1698,29 @@ function connectSSE() {
     if (sseRetry) { clearTimeout(sseRetry); sseRetry = null; }
   };
 
-  ['ticket_update','pr_created','event'].forEach(ev =>
-    es.addEventListener(ev, () => refresh())
-  );
+  es.addEventListener('ticket_update', e => {
+    refresh();
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.status === 'done') {
+        const ticket = lastTickets?.find(t => t.issue_key === msg.issue_key);
+        const summary = ticket?.summary ? ` – ${ticket.summary}` : '';
+        sendNotification('Ticket done', `${msg.issue_key}${summary}`);
+      } else if (msg.status === 'failed') {
+        sendNotification('Ticket failed', msg.issue_key);
+      }
+    } catch {}
+  });
+
+  es.addEventListener('pr_created', e => {
+    refresh();
+    try {
+      const msg = JSON.parse(e.data);
+      sendNotification('Pull request created', `${msg.issue_key} in ${msg.repo_slug}`);
+    } catch {}
+  });
+
+  es.addEventListener('event', () => refresh());
 
   es.addEventListener('log_line', e => {
     try {
@@ -2000,6 +2020,7 @@ async function previewTickets() {
     let html = results.map((r, i) => `<div id="ct-preview-${i}">${renderPreviewCard(r, i, total)}</div>`).join('');
     html += `<div id="ct-confirm-bar">${renderConfirmBar()}</div>`;
     resultsEl.innerHTML = html;
+    notifyTicketsReady(total);
   } catch (err) {
     if (err.name === 'AbortError') {
       resultsEl.innerHTML = '';
@@ -2023,6 +2044,28 @@ async function cancelPreviewRun() {
   if (ctAbortController) ctAbortController.abort();
   await fetch('/api/cancel-preview', { method: 'POST' }).catch(() => {});
 }
+
+async function sendNotification(title, body) {
+  if (document.hasFocus()) return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission !== 'granted') return;
+  new Notification(title, { body });
+}
+
+async function notifyTicketsReady(count) {
+  const body = count === 1 ? '1 ticket is ready to review' : `${count} tickets are ready to review`;
+  sendNotification('Ticket Creation', body);
+}
+
+window.addEventListener('beforeunload', () => {
+  if (ctAbortController) {
+    navigator.sendBeacon('/api/cancel-preview');
+  }
+});
 
 function renderPreviewCard(r, index, total) {
   const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
