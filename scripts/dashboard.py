@@ -159,14 +159,20 @@ def _load_prompt(filename: str) -> str:
 DEFAULT_PROMPT_CONTEXT = _load_prompt("ticket_context.md")
 DEFAULT_PROMPT_INSTRUCTIONS = _load_prompt("ticket_instructions.md")
 DEFAULT_PROMPT_PR_COMMENT = _load_prompt("pr_comment.md")
+DEFAULT_PROMPT_CREATE_TICKET = _load_prompt("create_ticket.md")
 
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
     "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
+    "prompt_create_ticket": DEFAULT_PROMPT_CREATE_TICKET,
     "model": "",
     "effort": "medium",
     "reviewers": "",
+    "create_ticket_model": "",
+    "create_ticket_effort": "",
+    "create_ticket_issue_types": "",
+    "create_ticket_templates": "{}",
 }
 
 

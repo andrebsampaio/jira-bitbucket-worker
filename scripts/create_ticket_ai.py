@@ -143,15 +143,34 @@ def _enhance_with_codex(
       .ticket_draft_meta.json  — summary, issue_type, components (simple values)
       .ticket_draft_desc.txt   — full description as plain text
     """
+    from scripts import db
+
     meta_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_meta.json")
     desc_path = os.path.join(WORKSPACE_PATH, ".ticket_draft_desc.txt")
 
     components_str = ", ".join(components) if components else "none"
     types_str = ", ".join(issue_types) if issue_types else "Story, Bug, Task"
 
-    _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
-    with open(os.path.join(_prompts_dir, "create_ticket.md"), encoding="utf-8") as f:
-        prompt_tpl = f.read()
+    # Build per-issue-type templates section for the prompt
+    templates_raw = db.get_setting("create_ticket_templates", "{}")
+    try:
+        templates_map = json.loads(templates_raw) if templates_raw else {}
+    except (json.JSONDecodeError, TypeError):
+        templates_map = {}
+    if templates_map:
+        lines = ["Issue type templates (follow the matching template when writing the description):"]
+        for itype, tpl in templates_map.items():
+            if tpl and tpl.strip():
+                lines.append(f"- {itype}: {tpl.strip()}")
+        templates_str = "\n".join(lines) + "\n"
+    else:
+        templates_str = ""
+
+    prompt_tpl = db.get_setting("prompt_create_ticket", "")
+    if not prompt_tpl:
+        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        with open(os.path.join(_prompts_dir, "create_ticket.md"), encoding="utf-8") as f:
+            prompt_tpl = f.read()
 
     prompt = prompt_tpl.format(
         components=components_str,
@@ -159,15 +178,15 @@ def _enhance_with_codex(
         raw_description=raw_description,
         meta_path=meta_path,
         desc_path=desc_path,
+        templates=templates_str,
     )
 
     # Build codex command mirroring the pattern in process_ticket.py
-    from scripts import db
     cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
-    model = db.get_setting("model", "")
+    model = db.get_setting("create_ticket_model", "") or db.get_setting("model", "")
     if model:
         cmd += ["-m", model]
-    effort = db.get_setting("effort", "")
+    effort = db.get_setting("create_ticket_effort", "") or db.get_setting("effort", "")
     if effort and effort != "none":
         cmd += ["-c", f"reasoning_effort={effort}"]
     cmd.append(prompt)
@@ -233,8 +252,17 @@ def enhance_ticket_description(project_key: str, raw_description: str) -> dict:
     Returns a dict with: summary, issue_type, components, description,
     available_components, available_issue_types.
     """
+    from scripts import db
+
     components = get_project_components(project_key)
     issue_types = get_issue_types(project_key)
+
+    # Filter issue types to the configured allowlist (if set)
+    allowed_raw = db.get_setting("create_ticket_issue_types", "")
+    if allowed_raw and allowed_raw.strip():
+        allowed = [t.strip() for t in allowed_raw.split(",") if t.strip()]
+        issue_types = [it for it in issue_types if it in allowed] or issue_types
+
     enhanced = _enhance_with_codex(raw_description, components, issue_types)
     return {
         **enhanced,

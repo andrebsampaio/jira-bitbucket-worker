@@ -720,6 +720,8 @@ header {
 }
 .ph-tag:hover { background: var(--blue-dim); }
 
+.form-hint { font-size: 12px; color: var(--text-3); padding: 6px 0; }
+
 .settings-actions {
   display: flex;
   align-items: center;
@@ -1110,7 +1112,7 @@ header {
   <div id="settings-inner">
 
     <div class="settings-group">
-      <div class="sg-title">Model Configuration</div>
+      <div class="sg-title">Code Creation</div>
       <div class="form-row">
         <label class="form-lbl" for="s-model">Model <em>leave blank for default</em></label>
         <input type="text" id="s-model" class="form-input" placeholder="e.g. claude-opus-4-5">
@@ -1130,13 +1132,8 @@ header {
         <label class="form-lbl" for="s-reviewers">Reviewers <em>comma-separated Bitbucket account IDs</em></label>
         <input type="text" id="s-reviewers" class="form-input" placeholder="abc123, def456">
       </div>
-    </div>
-
-    <div class="settings-group">
-      <div class="sg-title">Prompt Templates</div>
-
       <div class="form-row">
-        <label class="form-lbl" for="s-ctx">Context</label>
+        <label class="form-lbl" for="s-ctx">Context Prompt</label>
         <textarea id="s-ctx" class="form-ta" rows="7"></textarea>
         <div class="ph-tags">
           <span class="ph-tag" onclick="ins('s-ctx','{{issue_key}}')">{{issue_key}}</span>
@@ -1146,9 +1143,8 @@ header {
           <span class="ph-tag" onclick="ins('s-ctx','{{components}}')">{{components}}</span>
         </div>
       </div>
-
       <div class="form-row">
-        <label class="form-lbl" for="s-instr">Instructions</label>
+        <label class="form-lbl" for="s-instr">Instructions Prompt</label>
         <textarea id="s-instr" class="form-ta" rows="7"></textarea>
         <div class="ph-tags">
           <span class="ph-tag" onclick="ins('s-instr','{{issue_key}}')">{{issue_key}}</span>
@@ -1156,14 +1152,56 @@ header {
           <span class="ph-tag" onclick="ins('s-instr','{{branch}}')">{{branch}}</span>
         </div>
       </div>
-
       <div class="form-row">
-        <label class="form-lbl" for="s-pr">PR Comment</label>
+        <label class="form-lbl" for="s-pr">PR Comment Prompt</label>
         <textarea id="s-pr" class="form-ta" rows="5"></textarea>
         <div class="ph-tags">
           <span class="ph-tag" onclick="ins('s-pr','{{comment}}')">{{comment}}</span>
           <span class="ph-tag" onclick="ins('s-pr','{{pr_title}}')">{{pr_title}}</span>
           <span class="ph-tag" onclick="ins('s-pr','{{repo}}')">{{repo}}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="sg-title">Ticket Creation</div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-ct-model">Model <em>leave blank to use Code Creation model</em></label>
+        <input type="text" id="s-ct-model" class="form-input" placeholder="e.g. claude-opus-4-5">
+      </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-ct-effort">Reasoning Effort <em>leave blank to use Code Creation effort</em></label>
+        <select id="s-ct-effort" class="form-select">
+          <option value="">— use Code Creation effort —</option>
+          <option value="none">None</option>
+          <option value="minimal">Minimal</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="xhigh">Extra High</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-ct-issue-types">Issue Types <em>comma-separated allowlist — leave blank to use all types from JIRA</em></label>
+        <input type="text" id="s-ct-issue-types" class="form-input" placeholder="e.g. Story, Bug, Task"
+          oninput="rebuildTemplateEditors()">
+      </div>
+      <div class="form-row">
+        <label class="form-lbl">Issue Type Templates <em>optional description structure per type</em></label>
+        <div id="s-ct-templates">
+          <div class="form-hint">Define issue types above to configure per-type templates.</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-ct-prompt">Create Ticket Prompt</label>
+        <textarea id="s-ct-prompt" class="form-ta" rows="10"></textarea>
+        <div class="ph-tags">
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{components}')">&#123;components&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{issue_types}')">&#123;issue_types&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{templates}')">&#123;templates&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{raw_description}')">&#123;raw_description&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{meta_path}')">&#123;meta_path&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{desc_path}')">&#123;desc_path&#125;</span>
         </div>
       </div>
     </div>
@@ -1628,19 +1666,32 @@ async function loadSettings() {
   document.getElementById('s-ctx').value    = s.prompt_context || '';
   document.getElementById('s-instr').value  = s.prompt_instructions || '';
   document.getElementById('s-pr').value     = s.prompt_pr_comment || '';
+  document.getElementById('s-ct-model').value = s.create_ticket_model || '';
+  document.getElementById('s-ct-effort').value = s.create_ticket_effort || '';
+  document.getElementById('s-ct-issue-types').value = s.create_ticket_issue_types || '';
+  document.getElementById('s-ct-prompt').value = s.prompt_create_ticket || '';
+  let templates = {};
+  try { templates = JSON.parse(s.create_ticket_templates || '{}'); } catch {}
+  rebuildTemplateEditors(templates);
 }
 
 async function saveSettings() {
+  const templates = collectTemplates();
   await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ settings: {
-      model:               document.getElementById('s-model').value,
-      effort:              document.getElementById('s-effort').value,
-      reviewers:           document.getElementById('s-reviewers').value,
-      prompt_context:      document.getElementById('s-ctx').value,
-      prompt_instructions: document.getElementById('s-instr').value,
-      prompt_pr_comment:   document.getElementById('s-pr').value,
+      model:                    document.getElementById('s-model').value,
+      effort:                   document.getElementById('s-effort').value,
+      reviewers:                document.getElementById('s-reviewers').value,
+      prompt_context:           document.getElementById('s-ctx').value,
+      prompt_instructions:      document.getElementById('s-instr').value,
+      prompt_pr_comment:        document.getElementById('s-pr').value,
+      create_ticket_model:      document.getElementById('s-ct-model').value,
+      create_ticket_effort:     document.getElementById('s-ct-effort').value,
+      create_ticket_issue_types: document.getElementById('s-ct-issue-types').value,
+      create_ticket_templates:  JSON.stringify(templates),
+      prompt_create_ticket:     document.getElementById('s-ct-prompt').value,
     }}),
   });
   const t = document.getElementById('toast');
@@ -1657,6 +1708,46 @@ function resetSettings() {
   document.getElementById('s-ctx').value    = settingsDef.prompt_context || '';
   document.getElementById('s-instr').value  = settingsDef.prompt_instructions || '';
   document.getElementById('s-pr').value     = settingsDef.prompt_pr_comment || '';
+  document.getElementById('s-ct-model').value = settingsDef.create_ticket_model || '';
+  document.getElementById('s-ct-effort').value = settingsDef.create_ticket_effort || '';
+  document.getElementById('s-ct-issue-types').value = settingsDef.create_ticket_issue_types || '';
+  document.getElementById('s-ct-prompt').value = settingsDef.prompt_create_ticket || '';
+  rebuildTemplateEditors({});
+}
+
+function rebuildTemplateEditors(existingTemplates) {
+  const container = document.getElementById('s-ct-templates');
+  const typesStr = document.getElementById('s-ct-issue-types').value;
+  const types = typesStr.split(',').map(t => t.trim()).filter(Boolean);
+  if (types.length === 0) {
+    container.innerHTML = '<div class="form-hint">Define issue types above to configure per-type templates.</div>';
+    return;
+  }
+  // Preserve any current values if called without existingTemplates arg (i.e. on input event)
+  if (existingTemplates === undefined) {
+    existingTemplates = collectTemplates();
+  }
+  container.innerHTML = '';
+  for (const type of types) {
+    const row = document.createElement('div');
+    row.className = 'form-row';
+    const taId = `s-ct-tpl-${type.replace(/\s+/g, '-')}`;
+    row.innerHTML =
+      `<label class="form-lbl" for="${escAttr(taId)}">${esc(type)}</label>` +
+      `<textarea id="${escAttr(taId)}" class="form-ta" rows="3" data-issue-type="${escAttr(type)}" ` +
+      `placeholder="Optional: describe the expected structure for ${esc(type)} descriptions."></textarea>`;
+    container.appendChild(row);
+    document.getElementById(taId).value = existingTemplates[type] || '';
+  }
+}
+
+function collectTemplates() {
+  const result = {};
+  document.querySelectorAll('#s-ct-templates [data-issue-type]').forEach(el => {
+    const type = el.dataset.issueType;
+    if (type && el.value.trim()) result[type] = el.value.trim();
+  });
+  return result;
 }
 
 function ins(id, text) {
