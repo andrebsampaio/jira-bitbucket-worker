@@ -3,7 +3,7 @@ You are a technical product manager. Analyse the following raw ticket descriptio
 Available components: {components}
 Available issue types: {issue_types}
 {templates}
-Raw description:
+{code_context}Raw description:
 {raw_description}
 
 File 1 — write to {meta_path} — valid JSON, single line, no newlines inside strings:

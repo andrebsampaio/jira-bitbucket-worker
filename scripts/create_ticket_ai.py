@@ -7,8 +7,10 @@ creates it in JIRA and adds it to the active sprint when one is found.
 
 import json
 import os
+import signal
 import subprocess
 import tempfile
+import threading
 
 import requests
 from dotenv import load_dotenv
@@ -19,6 +21,95 @@ JIRA_URL = os.environ["JIRA_URL"].rstrip("/")
 JIRA_USER = os.environ["JIRA_USER"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 WORKSPACE_PATH = os.environ.get("WORKSPACE_PATH", tempfile.gettempdir())
+
+# ---------------------------------------------------------------------------
+# Cancellable subprocess slot for preview runs
+# ---------------------------------------------------------------------------
+
+_preview_proc: subprocess.Popen | None = None
+_preview_lock = threading.Lock()
+
+
+class PreviewCancelledError(RuntimeError):
+    pass
+
+
+def cancel_preview() -> bool:
+    """Kill the currently running preview Codex subprocess. Returns True if one was running."""
+    with _preview_lock:
+        proc = _preview_proc
+    if proc is None:
+        return False
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+    return True
+
+
+_PREVIEW_LOG_KEY = "__preview__"
+
+
+def _run_codex(cmd: list[str]) -> subprocess.CompletedProcess:
+    """Run a Codex command, streaming each output line to the DB log and storing
+    the process reference so it can be cancelled."""
+    from scripts import db
+    global _preview_proc
+
+    db.clear_ticket_logs(_PREVIEW_LOG_KEY)
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=WORKSPACE_PATH,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        start_new_session=True,
+    )
+    with _preview_lock:
+        _preview_proc = proc
+
+    lines: list[str] = []
+    timeout_hit = False
+
+    def _kill_on_timeout():
+        nonlocal timeout_hit
+        timeout_hit = True
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except OSError:
+            pass
+
+    try:
+        timeout_secs = int(db.get_setting("create_ticket_timeout", "") or 600)
+    except (ValueError, TypeError):
+        timeout_secs = 600
+
+    timer = threading.Timer(timeout_secs, _kill_on_timeout)
+    timer.start()
+    try:
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            lines.append(line)
+            db.log_line(_PREVIEW_LOG_KEY, line)
+        proc.wait()
+    finally:
+        timer.cancel()
+        with _preview_lock:
+            _preview_proc = None
+
+    if timeout_hit:
+        raise RuntimeError(f"Codex timed out after {timeout_secs} seconds")
+    if proc.returncode in (-signal.SIGTERM, -signal.SIGKILL):
+        raise PreviewCancelledError("Preview was cancelled")
+
+    return subprocess.CompletedProcess(cmd, proc.returncode, "\n".join(lines), "")
 
 
 # ---------------------------------------------------------------------------
@@ -132,10 +223,57 @@ def add_to_sprint(sprint_id: int, issue_key: str):
 # Codex enhancement
 # ---------------------------------------------------------------------------
 
+def _gather_code_context(raw_description: str, repos: str = "") -> str:
+    """Run Codex to find code relevant to the ticket description and return a summary."""
+    from scripts import db
+
+    context_path = os.path.join(WORKSPACE_PATH, ".ticket_code_context.txt")
+
+    prompt_tpl = db.get_setting("prompt_code_context", "")
+    if not prompt_tpl:
+        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        with open(os.path.join(_prompts_dir, "code_context.md"), encoding="utf-8") as f:
+            prompt_tpl = f.read()
+
+    prompt = prompt_tpl.format(context_path=context_path, raw_description=raw_description)
+    if repos:
+        prompt += f"\n\nFocus your exploration on these repositories/directories: {repos}"
+
+    cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
+    model = db.get_setting("create_ticket_model", "") or db.get_setting("model", "")
+    if model:
+        cmd += ["-m", model]
+    effort = db.get_setting("create_ticket_effort", "") or db.get_setting("effort", "")
+    if effort and effort != "none":
+        cmd += ["-c", f"reasoning_effort={effort}"]
+    cmd.append(prompt)
+
+    try:
+        os.remove(context_path)
+    except FileNotFoundError:
+        pass
+
+    result = _run_codex(cmd)
+
+    if result.returncode != 0 or not os.path.isfile(context_path):
+        return ""
+
+    with open(context_path, encoding="utf-8") as f:
+        context = f.read().strip()
+
+    try:
+        os.remove(context_path)
+    except FileNotFoundError:
+        pass
+
+    return context
+
+
 def _enhance_with_codex(
     raw_description: str,
     components: list[str],
     issue_types: list[str],
+    code_context: str = "",
 ) -> dict:
     """Run Codex to turn a raw description into structured ticket fields.
 
@@ -172,6 +310,11 @@ def _enhance_with_codex(
         with open(os.path.join(_prompts_dir, "create_ticket.md"), encoding="utf-8") as f:
             prompt_tpl = f.read()
 
+    code_context_str = (
+        f"Relevant code context from the repository:\n{code_context}\n\n"
+        if code_context else ""
+    )
+
     prompt = prompt_tpl.format(
         components=components_str,
         issue_types=types_str,
@@ -179,6 +322,7 @@ def _enhance_with_codex(
         meta_path=meta_path,
         desc_path=desc_path,
         templates=templates_str,
+        code_context=code_context_str,
     )
 
     # Build codex command mirroring the pattern in process_ticket.py
@@ -198,13 +342,7 @@ def _enhance_with_codex(
         except FileNotFoundError:
             pass
 
-    result = subprocess.run(
-        cmd,
-        cwd=WORKSPACE_PATH,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    result = _run_codex(cmd)
     if result.returncode != 0:
         raise RuntimeError(
             f"Codex exited with code {result.returncode}:\n{result.stderr or result.stdout}"
@@ -244,10 +382,18 @@ def _enhance_with_codex(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def enhance_ticket_description(project_key: str, raw_description: str) -> dict:
+def enhance_ticket_description(
+    project_key: str,
+    raw_description: str,
+    enrich_with_code: bool = False,
+    code_context_repos: str = "",
+) -> dict:
     """
     Step 1 of the two-step flow: run Codex to enhance the description and
     return the structured fields WITHOUT creating the ticket.
+
+    When enrich_with_code is True, first runs Codex to gather relevant code
+    context from the workspace and includes it in the enhancement prompt.
 
     Returns a dict with: summary, issue_type, components, description,
     available_components, available_issue_types.
@@ -263,7 +409,9 @@ def enhance_ticket_description(project_key: str, raw_description: str) -> dict:
         allowed = [t.strip() for t in allowed_raw.split(",") if t.strip()]
         issue_types = [it for it in issue_types if it in allowed] or issue_types
 
-    enhanced = _enhance_with_codex(raw_description, components, issue_types)
+    code_context = _gather_code_context(raw_description, repos=code_context_repos) if enrich_with_code else ""
+
+    enhanced = _enhance_with_codex(raw_description, components, issue_types, code_context=code_context)
     return {
         **enhanced,
         "available_components": components,

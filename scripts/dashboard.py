@@ -21,6 +21,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         post_routes = {
             "/api/settings": _api_settings_save,
             "/api/cancel": _api_cancel,
+            "/api/cancel-preview": _api_cancel_preview,
             "/api/preview-ticket": _api_preview_ticket,
             "/api/create-ticket": _api_create_ticket,
         }
@@ -160,12 +161,14 @@ DEFAULT_PROMPT_CONTEXT = _load_prompt("ticket_context.md")
 DEFAULT_PROMPT_INSTRUCTIONS = _load_prompt("ticket_instructions.md")
 DEFAULT_PROMPT_PR_COMMENT = _load_prompt("pr_comment.md")
 DEFAULT_PROMPT_CREATE_TICKET = _load_prompt("create_ticket.md")
+DEFAULT_PROMPT_CODE_CONTEXT = _load_prompt("code_context.md")
 
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
     "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
     "prompt_create_ticket": DEFAULT_PROMPT_CREATE_TICKET,
+    "prompt_code_context": DEFAULT_PROMPT_CODE_CONTEXT,
     "model": "",
     "effort": "medium",
     "reviewers": "",
@@ -173,6 +176,7 @@ SETTINGS_DEFAULTS = {
     "create_ticket_effort": "",
     "create_ticket_issue_types": "",
     "create_ticket_templates": "{}",
+    "create_ticket_timeout": "",
 }
 
 
@@ -200,6 +204,12 @@ def _api_settings_save(handler):
     _send_json(handler, {"ok": True})
 
 
+def _api_cancel_preview(handler):
+    from scripts.create_ticket_ai import cancel_preview
+    cancelled = cancel_preview()
+    _send_json(handler, {"cancelled": cancelled})
+
+
 def _api_jira_projects(handler):
     try:
         from scripts.create_ticket_ai import get_projects
@@ -220,9 +230,23 @@ def _api_preview_ticket(handler):
         return
 
     project_key = payload.get("project_key", "").strip()
-    descriptions = [d.strip() for d in payload.get("descriptions", []) if d.strip()]
+    raw_descriptions = payload.get("descriptions", [])
 
-    if not project_key or not descriptions:
+    # Accept both plain strings and {text, enrich_with_code} objects
+    ticket_inputs = []
+    for item in raw_descriptions:
+        if isinstance(item, dict):
+            text = item.get("text", "").strip()
+            enrich = bool(item.get("enrich_with_code", False))
+            repos = item.get("code_context_repos", "").strip()
+        else:
+            text = str(item).strip()
+            enrich = False
+            repos = ""
+        if text:
+            ticket_inputs.append({"text": text, "enrich_with_code": enrich, "code_context_repos": repos})
+
+    if not project_key or not ticket_inputs:
         handler.send_response(400)
         handler.send_header("Content-Type", "application/json")
         handler.end_headers()
@@ -232,9 +256,12 @@ def _api_preview_ticket(handler):
     from scripts.create_ticket_ai import enhance_ticket_description
 
     results = []
-    for description in descriptions:
+    for item in ticket_inputs:
         try:
-            preview = enhance_ticket_description(project_key, description)
+            preview = enhance_ticket_description(
+                project_key, item["text"], enrich_with_code=item["enrich_with_code"],
+                code_context_repos=item["code_context_repos"]
+            )
             results.append({"ok": True, "preview": preview})
         except Exception as exc:
             results.append({"ok": False, "error": str(exc)})

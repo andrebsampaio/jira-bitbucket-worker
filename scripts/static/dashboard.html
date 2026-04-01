@@ -816,6 +816,61 @@ header {
 }
 .ct-item .form-ta:focus { border-color: transparent; box-shadow: none; outline: none; }
 
+.ct-log-panel {
+  display: none;
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: hidden;
+  margin-top: 14px;
+}
+.ct-log-panel.show { display: block; }
+.ct-log-inner {
+  height: 180px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--term-text);
+}
+.ct-log-inner::-webkit-scrollbar { width: 4px; }
+.ct-log-inner::-webkit-scrollbar-track { background: transparent; }
+.ct-log-inner::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+.ct-log-inner .log-txt { word-break: break-all; white-space: pre-wrap; }
+.ct-log-inner .err .log-txt { color: var(--term-err); }
+
+.ct-item-options {
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.ct-enrich-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+}
+.ct-enrich-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.ct-repos-row {
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+.ct-repos-row .form-input {
+  font-size: 12px;
+  padding: 4px 8px;
+  width: 100%;
+}
+
 .btn-add-ticket {
   display: flex;
   align-items: center;
@@ -1187,6 +1242,10 @@ header {
           oninput="rebuildTemplateEditors()">
       </div>
       <div class="form-row">
+        <label class="form-lbl" for="s-ct-timeout">Timeout (seconds) <em>maximum time allowed for ticket creation — default 600</em></label>
+        <input type="number" id="s-ct-timeout" class="form-input" placeholder="600" min="30">
+      </div>
+      <div class="form-row">
         <label class="form-lbl">Issue Type Templates <em>optional description structure per type</em></label>
         <div id="s-ct-templates">
           <div class="form-hint">Define issue types above to configure per-type templates.</div>
@@ -1202,6 +1261,15 @@ header {
           <span class="ph-tag" onclick="ins('s-ct-prompt','{raw_description}')">&#123;raw_description&#125;</span>
           <span class="ph-tag" onclick="ins('s-ct-prompt','{meta_path}')">&#123;meta_path&#125;</span>
           <span class="ph-tag" onclick="ins('s-ct-prompt','{desc_path}')">&#123;desc_path&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-prompt','{code_context}')">&#123;code_context&#125;</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-lbl" for="s-ct-context-prompt">Code Context Prompt <em>used when "Check codebase for context" is enabled</em></label>
+        <textarea id="s-ct-context-prompt" class="form-ta" rows="10"></textarea>
+        <div class="ph-tags">
+          <span class="ph-tag" onclick="ins('s-ct-context-prompt','{raw_description}')">&#123;raw_description&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-context-prompt','{context_path}')">&#123;context_path&#125;</span>
         </div>
       </div>
     </div>
@@ -1241,7 +1309,11 @@ header {
       <div class="btn-spinner" id="ct-spinner">
         <div class="spinner"></div>
         <span id="ct-spinner-label">Running Codex…</span>
+        <button class="btn-ghost" id="ct-cancel" onclick="cancelPreviewRun()" style="margin-left:6px">Cancel</button>
       </div>
+    </div>
+    <div class="ct-log-panel" id="ct-log-panel">
+      <div class="ct-log-inner" id="ct-log-inner"></div>
     </div>
   </div>
 
@@ -1669,7 +1741,9 @@ async function loadSettings() {
   document.getElementById('s-ct-model').value = s.create_ticket_model || '';
   document.getElementById('s-ct-effort').value = s.create_ticket_effort || '';
   document.getElementById('s-ct-issue-types').value = s.create_ticket_issue_types || '';
+  document.getElementById('s-ct-timeout').value = s.create_ticket_timeout || '';
   document.getElementById('s-ct-prompt').value = s.prompt_create_ticket || '';
+  document.getElementById('s-ct-context-prompt').value = s.prompt_code_context || '';
   let templates = {};
   try { templates = JSON.parse(s.create_ticket_templates || '{}'); } catch {}
   rebuildTemplateEditors(templates);
@@ -1690,8 +1764,10 @@ async function saveSettings() {
       create_ticket_model:      document.getElementById('s-ct-model').value,
       create_ticket_effort:     document.getElementById('s-ct-effort').value,
       create_ticket_issue_types: document.getElementById('s-ct-issue-types').value,
+      create_ticket_timeout:    document.getElementById('s-ct-timeout').value,
       create_ticket_templates:  JSON.stringify(templates),
       prompt_create_ticket:     document.getElementById('s-ct-prompt').value,
+      prompt_code_context:      document.getElementById('s-ct-context-prompt').value,
     }}),
   });
   const t = document.getElementById('toast');
@@ -1711,7 +1787,9 @@ function resetSettings() {
   document.getElementById('s-ct-model').value = settingsDef.create_ticket_model || '';
   document.getElementById('s-ct-effort').value = settingsDef.create_ticket_effort || '';
   document.getElementById('s-ct-issue-types').value = settingsDef.create_ticket_issue_types || '';
+  document.getElementById('s-ct-timeout').value = settingsDef.create_ticket_timeout || '';
   document.getElementById('s-ct-prompt').value = settingsDef.prompt_create_ticket || '';
+  document.getElementById('s-ct-context-prompt').value = settingsDef.prompt_code_context || '';
   rebuildTemplateEditors({});
 }
 
@@ -1781,7 +1859,16 @@ function addTicketInput() {
       `<span class="ct-item-num" id="ct-num-${id}"></span>` +
       `<button class="ct-item-remove" onclick="removeTicketInput(${id})">Remove</button>` +
     `</div>` +
-    `<textarea class="form-ta ct-desc" rows="5" placeholder="Describe what needs to be done. Be as rough or detailed as you like."></textarea>`;
+    `<textarea class="form-ta ct-desc" rows="5" placeholder="Describe what needs to be done. Be as rough or detailed as you like."></textarea>` +
+    `<div class="ct-item-options">` +
+      `<label class="ct-enrich-label">` +
+        `<input type="checkbox" class="ct-enrich-cb" onchange="this.closest('.ct-item').querySelector('.ct-repos-row').style.display=this.checked?'flex':'none'">` +
+        `Check codebase for context` +
+      `</label>` +
+      `<div class="ct-repos-row" style="display:none">` +
+        `<input type="text" class="form-input ct-repos-input" placeholder="Repos to check (comma-separated)">` +
+      `</div>` +
+    `</div>`;
   list.appendChild(div);
   renumberTickets();
   div.querySelector('textarea').focus();
@@ -1838,13 +1925,44 @@ function renderTicketResult(r, index, total) {
   }
 }
 
-let ctPreviews = null; // null = no preview in progress; array = preview results
+let ctPreviews = null;      // null = no preview in progress; array = preview results
+let ctDescriptions = null; // parallel array of {text, enrich_with_code} inputs
+let ctAbortController = null;
+let ctLogTimer = null;
+let ctLogSinceId = 0;
+
+function startPreviewLogPoll() {
+  ctLogSinceId = 0;
+  const inner = document.getElementById('ct-log-inner');
+  inner.innerHTML = '';
+  document.getElementById('ct-log-panel').classList.add('show');
+  ctLogTimer = setInterval(async () => {
+    const data = await api(`/api/logs/__preview__?since_id=${ctLogSinceId}`);
+    if (!data?.logs?.length) return;
+    ctLogSinceId = data.logs[data.logs.length - 1].id;
+    for (const l of data.logs) {
+      const row = document.createElement('div');
+      row.className = 'log-row' + (l.stream === 'stderr' ? ' err' : '');
+      row.innerHTML = `<span class="log-txt">${esc(l.line)}</span>`;
+      inner.appendChild(row);
+    }
+    inner.scrollTop = inner.scrollHeight;
+  }, 1000);
+}
+
+function stopPreviewLogPoll() {
+  if (ctLogTimer) { clearInterval(ctLogTimer); ctLogTimer = null; }
+}
 
 async function previewTickets() {
   const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
-  const descriptions = Array.from(document.querySelectorAll('#ct-list .ct-desc'))
-    .map(ta => ta.value.trim())
-    .filter(Boolean);
+  const descriptions = Array.from(document.querySelectorAll('#ct-list .ct-item'))
+    .map(item => ({
+      text: item.querySelector('.ct-desc')?.value.trim() || '',
+      enrich_with_code: item.querySelector('.ct-enrich-cb')?.checked || false,
+      code_context_repos: item.querySelector('.ct-repos-input')?.value.trim() || '',
+    }))
+    .filter(d => d.text);
 
   if (!projectKey || !descriptions.length) {
     alert('Please fill in the project key and at least one description.');
@@ -1862,38 +1980,48 @@ async function previewTickets() {
     ? 'Running Codex…'
     : `Running Codex for ${descriptions.length} tickets…`;
   spinner.classList.add('show');
+  startPreviewLogPoll();
+
+  ctAbortController = new AbortController();
 
   try {
     const resp = await fetch('/api/preview-ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_key: projectKey, descriptions }),
+      signal: ctAbortController.signal,
     });
     const data = await resp.json();
     const results = data.results || [];
     ctPreviews = results;
+    ctDescriptions = descriptions;
 
-    const anyOk = results.some(r => r.ok);
-    const okCount = results.filter(r => r.ok).length;
-    let html = results.map((r, i) => renderPreviewCard(r, i, results.length)).join('');
-    if (anyOk) {
-      const label = okCount === 1 ? 'Create Ticket' : `Create ${okCount} Tickets`;
-      html += `<div class="ct-confirm-bar">` +
-        `<button class="btn-primary" onclick="confirmCreateTickets()">${label}</button>` +
-        `<button class="btn-ghost" onclick="cancelPreview()">Edit descriptions</button>` +
-      `</div>`;
-    }
+    const total = results.length;
+    let html = results.map((r, i) => `<div id="ct-preview-${i}">${renderPreviewCard(r, i, total)}</div>`).join('');
+    html += `<div id="ct-confirm-bar">${renderConfirmBar()}</div>`;
     resultsEl.innerHTML = html;
   } catch (err) {
-    resultsEl.innerHTML =
-      `<div class="cr-card error">` +
-        `<div class="cr-head error">Request failed</div>` +
-        `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
-      `</div>`;
+    if (err.name === 'AbortError') {
+      resultsEl.innerHTML = '';
+    } else {
+      resultsEl.innerHTML =
+        `<div class="cr-card error">` +
+          `<div class="cr-head error">Request failed</div>` +
+          `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
+        `</div>`;
+    }
     submitBtn.style.display = '';
   } finally {
+    ctAbortController = null;
+    stopPreviewLogPoll();
     spinner.classList.remove('show');
   }
+}
+
+async function cancelPreviewRun() {
+  stopPreviewLogPoll();
+  if (ctAbortController) ctAbortController.abort();
+  await fetch('/api/cancel-preview', { method: 'POST' }).catch(() => {});
 }
 
 function renderPreviewCard(r, index, total) {
@@ -1904,7 +2032,10 @@ function renderPreviewCard(r, index, total) {
         `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
         `${label} — enhancement failed` +
       `</div>` +
-      `<div class="cr-body"><div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div></div>` +
+      `<div class="cr-body">` +
+        `<div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div>` +
+        `<button class="btn-ghost" style="margin-top:10px" onclick="retryTicketPreview(${index})">Retry</button>` +
+      `</div>` +
     `</div>`;
   }
   const p = r.preview;
@@ -1934,10 +2065,58 @@ function renderPreviewCard(r, index, total) {
   `</div>`;
 }
 
+function renderConfirmBar() {
+  if (!ctPreviews) return '';
+  const okCount = ctPreviews.filter(r => r.ok).length;
+  if (!okCount) return '';
+  const label = okCount === 1 ? 'Create Ticket' : `Create ${okCount} Tickets`;
+  return `<div class="ct-confirm-bar">` +
+    `<button class="btn-primary" onclick="confirmCreateTickets()">${label}</button>` +
+    `<button class="btn-ghost" onclick="cancelPreview()">Edit descriptions</button>` +
+  `</div>`;
+}
+
 function cancelPreview() {
   ctPreviews = null;
+  ctDescriptions = null;
   document.getElementById('ct-results').innerHTML = '';
   document.getElementById('ct-submit').style.display = '';
+  document.getElementById('ct-log-panel').classList.remove('show');
+}
+
+async function retryTicketPreview(index) {
+  if (!ctDescriptions || !ctDescriptions[index]) return;
+  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
+  const total = ctPreviews.length;
+
+  const cardEl = document.getElementById(`ct-preview-${index}`);
+  if (cardEl) {
+    const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
+    cardEl.innerHTML =
+      `<div class="cr-card">` +
+        `<div class="cr-head" style="color:var(--text-3)">` +
+          `<div class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></div>` +
+          `${label} — retrying…` +
+        `</div>` +
+      `</div>`;
+  }
+
+  try {
+    const resp = await fetch('/api/preview-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_key: projectKey, descriptions: [ctDescriptions[index]] }),
+    });
+    const data = await resp.json();
+    const result = (data.results || [])[0] || { ok: false, error: 'No result returned' };
+    ctPreviews[index] = result;
+  } catch (err) {
+    ctPreviews[index] = { ok: false, error: String(err) };
+  }
+
+  if (cardEl) cardEl.innerHTML = renderPreviewCard(ctPreviews[index], index, total);
+  const barEl = document.getElementById('ct-confirm-bar');
+  if (barEl) barEl.innerHTML = renderConfirmBar();
 }
 
 async function confirmCreateTickets() {
@@ -1974,6 +2153,7 @@ async function confirmCreateTickets() {
     const data = await resp.json();
     const results = data.results || [];
     ctPreviews = null;
+    ctDescriptions = null;
     resultsEl.innerHTML = results.map((r, i) => renderTicketResult(r, i, results.length)).join('');
     const items = Array.from(document.querySelectorAll('#ct-list .ct-item'));
     results.forEach((r, i) => {
