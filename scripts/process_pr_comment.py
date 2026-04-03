@@ -33,6 +33,12 @@ WORKSPACE_PATH = os.environ["WORKSPACE_PATH"]
 BOT_MENTION = os.environ.get("BOT_MENTION", "@andrebot")
 
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
+BOT_REVIEW_KEYWORDS = [
+    kw.strip().lower()
+    for kw in os.environ.get("BOT_REVIEW_KEYWORDS", "review,please review,review please").split(",")
+    if kw.strip()
+]
+REVIEW_OUTPUT_FILE = ".codex-review.json"
 
 
 def _bb_auth() -> tuple[str, str]:
@@ -119,6 +125,40 @@ def build_prompt(comment_text: str, file_path: str, line: str,
     return template.format_map(template_vars)
 
 
+def build_review_prompt(pr_title: str, source_branch: str,
+                        repo_slug: str, diff: str) -> str:
+    from scripts.dashboard import SETTINGS_DEFAULTS
+
+    template_vars = {
+        "diff": diff,
+        "pr_title": pr_title,
+        "source_branch": source_branch,
+        "repo_slug": repo_slug,
+    }
+    template = db.get_setting("prompt_pr_review", SETTINGS_DEFAULTS["prompt_pr_review"])
+    return template.format_map(template_vars)
+
+
+def is_review_request(comment_text: str) -> bool:
+    """Determine whether the mention should trigger a PR review."""
+    if not BOT_REVIEW_KEYWORDS:
+        return False
+    normalized = re.sub(r"\s+", " ", (comment_text or "")).strip().lower()
+    if not normalized:
+        return False
+    for keyword in BOT_REVIEW_KEYWORDS:
+        key = keyword.lower()
+        if not key:
+            continue
+        if (
+            normalized == key
+            or normalized.startswith(f"{key} ")
+            or normalized.startswith(f"{key}:")
+        ):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Git / worktree helpers
 # ---------------------------------------------------------------------------
@@ -190,44 +230,173 @@ def get_commit_hash(repo_dir: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else "unknown"
 
 
+def run_codex_with_prompt(prompt: str, worktree_path: str, issue_key: str) -> None:
+    """Run Codex CLI with the provided prompt inside the worktree."""
+    db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
+    db.clear_ticket_logs(issue_key)
+
+    cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
+    model = db.get_setting("model", "")
+    if model:
+        cmd += ["-m", model]
+    effort = db.get_setting("effort", "")
+    if effort and effort != "none":
+        cmd += ["-c", f"model_reasoning_effort={effort}"]
+    cmd.append(prompt)
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=worktree_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        print(f"[codex] {line}")
+        db.log_line(issue_key, line)
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, "codex")
+    print(f"[pr-comment] Codex finished for {issue_key}")
+
+
+def _parse_line_number(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_severity(severity: str) -> str:
+    sev = (severity or "").strip().lower()
+    if sev in {"major", "minor", "nit"}:
+        return sev
+    return ""
+
+
+def load_review_results(review_file: str) -> dict:
+    if not os.path.isfile(review_file):
+        raise RuntimeError(f"Codex did not produce {review_file}")
+    with open(review_file, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid review result format in {review_file}")
+
+    comments = data.get("comments") or []
+    if not isinstance(comments, list):
+        comments = []
+
+    normalized_comments: list[dict] = []
+    for entry in comments:
+        if not isinstance(entry, dict):
+            continue
+        normalized_comments.append(
+            {
+                "path": (entry.get("path") or entry.get("file") or "").strip(),
+                "line": _parse_line_number(entry.get("line") or entry.get("line_number") or entry.get("to")),
+                "severity": _format_severity(entry.get("severity", "")),
+                "message": (entry.get("message") or entry.get("comment") or "").strip(),
+            }
+        )
+
+    return {
+        "status": (data.get("status") or "changes_requested").strip().lower(),
+        "summary": (data.get("summary") or "").strip(),
+        "comments": normalized_comments,
+    }
+
+
+def post_inline_comment(workspace: str, repo_slug: str, pr_id: str,
+                        file_path: str, line: int | None, body: str) -> dict:
+    url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
+    inline = {"path": file_path}
+    if line is not None:
+        inline["to"] = int(line)
+    payload = {
+        "content": {"raw": body},
+        "inline": inline,
+    }
+    response = requests.post(url, auth=_bb_auth(), json=payload)
+    response.raise_for_status()
+    return response.json()
+
+
+def summarize_review_reply(review: dict, inline_comments: int, general_notes: list[str]) -> str:
+    status = review.get("status", "changes_requested").lower()
+    status_label = "Approved" if status == "approve" else "Changes requested"
+    status_icon = "✅" if status == "approve" else "⚠️"
+    lines = [f"{status_icon} Review status: {status_label}"]
+
+    summary = review.get("summary", "").strip()
+    if summary:
+        lines.append("")
+        lines.append(summary)
+
+    if inline_comments:
+        plural = "s" if inline_comments != 1 else ""
+        lines.append("")
+        lines.append(f"- Left {inline_comments} inline comment{plural} on the PR.")
+
+    if general_notes:
+        lines.append("")
+        lines.append("Additional notes:")
+        for note in general_notes:
+            lines.append(f"- {note}")
+
+    if len(lines) == 1:
+        lines.append("")
+        lines.append("No issues found.")
+
+    return "\n".join(lines).strip()
+
+
+def post_review_feedback(workspace: str, repo_slug: str, pr_id: str, review: dict) -> tuple[int, list[str]]:
+    """Post inline comments for review findings and collect any fallback notes."""
+    inline_posted = 0
+    general_notes: list[str] = []
+
+    for entry in review.get("comments", []):
+        message = entry.get("message", "")
+        if not message:
+            continue
+        severity = entry.get("severity", "")
+        severity_prefix = f"[{severity}] " if severity else ""
+        file_path = entry.get("path", "")
+        line = entry.get("line")
+
+        if file_path and line is not None:
+            body_lines = []
+            if severity:
+                body_lines.append(f"**{severity.title()}**")
+            body_lines.append(message)
+            body = "\n\n".join(body_lines)
+            try:
+                post_inline_comment(workspace, repo_slug, pr_id, file_path, line, body)
+                inline_posted += 1
+                continue
+            except requests.HTTPError as exc:
+                print(f"[pr-comment] WARNING: failed to post inline comment for {file_path}:{line} — {exc}")
+
+        location = ""
+        if file_path:
+            location = f" ({file_path}{f':{line}' if line is not None else ''})"
+        general_notes.append(f"{severity_prefix}{message}{location}")
+
+    return inline_posted, general_notes
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    if len(sys.argv) < 5:
-        print("Usage: process_pr_comment.py <workspace> <repo_slug> <pr_id> <comment_id>")
-        sys.exit(1)
-
-    workspace = sys.argv[1]
-    repo_slug = sys.argv[2]
-    pr_id = sys.argv[3]
-    comment_id = sys.argv[4]
-    issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
-
-    print(f"[pr-comment] Processing comment {comment_id} on PR {pr_id} in {workspace}/{repo_slug}")
-
-    # Step 1 — Fetch context from Bitbucket API
-    db.ticket_started(issue_key, summary=f"PR comment on {repo_slug}#{pr_id}")
-
-    pr = fetch_pr(workspace, repo_slug, pr_id)
-    source_branch = pr["source"]["branch"]["name"]
-    pr_title = pr.get("title", "")
-
-    comment_data = fetch_comment(workspace, repo_slug, pr_id, comment_id)
-    comment_body = comment_data.get("content", {}).get("raw", "")
-
-    # Determine if inline comment
-    inline = comment_data.get("inline", {})
-    file_path = inline.get("path", "")
-    line_number = str(inline.get("to", "") or inline.get("from", "") or "")
-
-    # Fetch PR diff
-    full_diff = fetch_pr_diff(workspace, repo_slug, pr_id)
-    diff = extract_file_diff(full_diff, file_path) if file_path else full_diff
-
-    # Step 2 — Build prompt
-    comment_text = comment_body.replace(BOT_MENTION, "").strip()
+def process_fix_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: str,
+                     issue_key: str, source_branch: str, pr_title: str,
+                     comment_text: str, file_path: str, line_number: str,
+                     diff: str) -> None:
     prompt = build_prompt(
         comment_text=comment_text,
         file_path=file_path,
@@ -239,7 +408,6 @@ def main():
     )
     print(f"[pr-comment] Prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
 
-    # Step 3 — Worktree flow
     repo_dir = find_local_repo(repo_slug)
     if not repo_dir:
         raise RuntimeError(f"No local repo found matching '{repo_slug}' under {WORKSPACE_PATH}")
@@ -248,37 +416,8 @@ def main():
     print(f"[pr-comment] Created worktree at {worktree_path}")
 
     try:
-        # Run codex inside the worktree
-        db.ticket_phase(issue_key, "codex-running", f"Codex started for {issue_key}")
-        db.clear_ticket_logs(issue_key)
+        run_codex_with_prompt(prompt, worktree_path, issue_key)
 
-        cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
-        model = db.get_setting("model", "")
-        if model:
-            cmd += ["-m", model]
-        effort = db.get_setting("effort", "")
-        if effort and effort != "none":
-            cmd += ["-c", f"model_reasoning_effort={effort}"]
-        cmd.append(prompt)
-
-        proc = subprocess.Popen(
-            cmd,
-            cwd=worktree_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        for line in proc.stdout:
-            line = line.rstrip("\n")
-            print(f"[codex] {line}")
-            db.log_line(issue_key, line)
-        proc.wait()
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, "codex")
-        print(f"[pr-comment] Codex finished for {issue_key}")
-
-        # Load codex-generated commit message and reply from .codex-commit.json
         codex_commit_file = os.path.join(worktree_path, ".codex-commit.json")
         codex_commit_message = f"fix: address PR review comment (#{comment_id})"
         codex_reply_template = "Fixed in commit `{hash}`"
@@ -294,10 +433,8 @@ def main():
         else:
             print(f"[pr-comment] No .codex-commit.json found; using default commit message")
 
-        # Commit the changes codex made (sandbox blocks git inside codex)
         db.ticket_phase(issue_key, "pushing", f"Committing and pushing fix for {issue_key}")
 
-        # Remove .codex-commit.json from the worktree before committing
         if os.path.isfile(codex_commit_file):
             os.remove(codex_commit_file)
 
@@ -317,7 +454,6 @@ def main():
             check=True,
         )
 
-        # Push the fix to the source branch
         subprocess.run(
             ["git", "push", "origin", f"HEAD:{source_branch}"],
             cwd=worktree_path,
@@ -326,15 +462,106 @@ def main():
         commit_hash = get_commit_hash(worktree_path)
         print(f"[pr-comment] Pushed fix to {source_branch} (commit {commit_hash})")
 
-        # Step 4 — Reply to comment
         reply_body = codex_reply_template.replace("{hash}", commit_hash)
         reply_to_comment(workspace, repo_slug, pr_id, comment_id, reply_body)
         print(f"[pr-comment] Replied to comment {comment_id}")
-
     finally:
-        # Step 5 — Clean up worktree
         print(f"[pr-comment] Removing worktree {worktree_path}")
         remove_worktree(worktree_path)
+
+
+def process_review_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: str,
+                        issue_key: str, source_branch: str, pr_title: str,
+                        full_diff: str) -> None:
+    prompt = build_review_prompt(
+        pr_title=pr_title,
+        source_branch=source_branch,
+        repo_slug=repo_slug,
+        diff=full_diff,
+    )
+    print(f"[pr-comment] Review prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
+
+    repo_dir = find_local_repo(repo_slug)
+    if not repo_dir:
+        raise RuntimeError(f"No local repo found matching '{repo_slug}' under {WORKSPACE_PATH}")
+
+    worktree_path = create_worktree(repo_dir, source_branch, pr_id)
+    print(f"[pr-comment] Created worktree at {worktree_path}")
+
+    try:
+        run_codex_with_prompt(prompt, worktree_path, issue_key)
+
+        review_file = os.path.join(worktree_path, REVIEW_OUTPUT_FILE)
+        review = load_review_results(review_file)
+        try:
+            os.remove(review_file)
+        except OSError:
+            pass
+
+        inline_count, general_notes = post_review_feedback(workspace, repo_slug, pr_id, review)
+        summary = summarize_review_reply(review, inline_count, general_notes)
+        reply_to_comment(workspace, repo_slug, pr_id, comment_id, summary)
+        print(f"[pr-comment] Posted review summary reply for comment {comment_id}")
+    finally:
+        print(f"[pr-comment] Removing worktree {worktree_path}")
+        remove_worktree(worktree_path)
+
+
+def main():
+    if len(sys.argv) < 5:
+        print("Usage: process_pr_comment.py <workspace> <repo_slug> <pr_id> <comment_id>")
+        sys.exit(1)
+
+    workspace = sys.argv[1]
+    repo_slug = sys.argv[2]
+    pr_id = sys.argv[3]
+    comment_id = sys.argv[4]
+    issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
+
+    print(f"[pr-comment] Processing comment {comment_id} on PR {pr_id} in {workspace}/{repo_slug}")
+
+    db.ticket_started(issue_key, summary=f"PR comment on {repo_slug}#{pr_id}")
+
+    pr = fetch_pr(workspace, repo_slug, pr_id)
+    source_branch = pr["source"]["branch"]["name"]
+    pr_title = pr.get("title", "")
+
+    comment_data = fetch_comment(workspace, repo_slug, pr_id, comment_id)
+    comment_body = comment_data.get("content", {}).get("raw", "")
+
+    inline = comment_data.get("inline", {})
+    file_path = inline.get("path", "")
+    line_number = str(inline.get("to", "") or inline.get("from", "") or "")
+
+    full_diff = fetch_pr_diff(workspace, repo_slug, pr_id)
+    diff = extract_file_diff(full_diff, file_path) if file_path else full_diff
+
+    comment_text = comment_body.replace(BOT_MENTION, "").strip()
+    if is_review_request(comment_text):
+        process_review_flow(
+            workspace=workspace,
+            repo_slug=repo_slug,
+            pr_id=pr_id,
+            comment_id=comment_id,
+            issue_key=issue_key,
+            source_branch=source_branch,
+            pr_title=pr_title,
+            full_diff=full_diff,
+        )
+    else:
+        process_fix_flow(
+            workspace=workspace,
+            repo_slug=repo_slug,
+            pr_id=pr_id,
+            comment_id=comment_id,
+            issue_key=issue_key,
+            source_branch=source_branch,
+            pr_title=pr_title,
+            comment_text=comment_text,
+            file_path=file_path,
+            line_number=line_number,
+            diff=diff,
+        )
 
     db.ticket_finished(issue_key)
     print(f"[pr-comment] Done processing {issue_key}")

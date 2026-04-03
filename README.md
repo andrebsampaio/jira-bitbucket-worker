@@ -23,6 +23,10 @@ Automated code implementation pipeline. When a JIRA ticket is assigned to a desi
 
 The PR comment bot supports both inline comments (on specific files/lines) and general PR comments. It only processes comments on open PRs and ignores its own comments to prevent loops.
 
+#### Requesting a PR review
+
+Mention the bot together with a review keyword (defaults: `review`, `please review`, `review please`) to trigger an automated review of the entire pull request. The bot runs Codex with a review-specific prompt, posts inline Bitbucket comments for each finding when the file/line can be resolved, and replies to the original comment with an overall summary and approval status. Customize the trigger phrases via `BOT_REVIEW_KEYWORDS` in `.env`.
+
 ---
 
 ## Web Dashboard
