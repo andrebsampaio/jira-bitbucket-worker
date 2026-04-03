@@ -761,11 +761,65 @@ header {
 .toast.show { display: flex; animation: fade-toast 2.5s ease forwards; }
 @keyframes fade-toast { 0%,60%{opacity:1} 100%{opacity:0} }
 
-/* ── CREATE TICKET PAGE ─────────────────────────────────────── */
-#page-create {
-  margin: 0 auto;
-  padding: 28px 24px 48px;
+/* ── CREATE TICKET PANEL ────────────────────────────────────── */
+.create-section {
+  margin: 14px 20px 32px;
+  padding: 24px 20px 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  background: var(--surface);
+  scroll-margin-top: 80px;
 }
+.create-section.highlight {
+  box-shadow: 0 0 0 2px var(--amber-line);
+}
+.create-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.create-head .section-lbl { margin-bottom: 0; }
+.create-head-sub {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.ct-shortcuts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.create-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 20px;
+}
+.create-form .settings-group { margin-bottom: 0; }
+.create-preview { display: flex; flex-direction: column; gap: 16px; }
+
+.ct-bulk-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  align-items: center;
+}
+.ct-bulk-actions .form-hint { margin-top: 0; }
+
+.btn-secondary {
+  padding: 7px 16px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.btn-secondary:hover { background: var(--surface); border-color: var(--border); }
 
 .ct-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 
@@ -783,6 +837,7 @@ header {
   padding: 8px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
+  gap: 10px;
 }
 
 .ct-item-num {
@@ -793,7 +848,13 @@ header {
   color: var(--text-3);
 }
 
-.ct-item-remove {
+.ct-head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ct-item-remove,
+.ct-item-duplicate {
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-3);
@@ -801,9 +862,16 @@ header {
   border-radius: var(--r);
   border: 1px solid var(--border-hi);
   background: none;
-  transition: color .15s, background .15s;
+  transition: color .15s, background .15s, border-color .15s;
 }
+.ct-item-remove:hover,
+.ct-item-duplicate:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
 .ct-item-remove:hover { color: var(--red); background: var(--red-dim); border-color: var(--red-line); }
+.ct-item-duplicate:hover { color: var(--blue); border-color: var(--blue-line); }
 
 .ct-item .form-ta {
   border: none;
@@ -815,7 +883,7 @@ header {
 .ct-item .form-ta:focus { border-color: transparent; box-shadow: none; outline: none; }
 
 .preview-board {
-  margin-top: 26px;
+  margin-top: 0;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
@@ -1130,6 +1198,10 @@ header {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .create-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 860px) {
   .dash-grid { grid-template-columns: 1fr; }
   .col-main  { border-right: none; min-height: auto; }
@@ -1150,9 +1222,8 @@ header {
     </div>
     <span class="logo-name">Worker</span>
   </div>
-  <button class="nav-btn active" onclick="showPage('dashboard', this)">Dashboard</button>
-  <button class="nav-btn" onclick="showPage('create', this)">+ Ticket</button>
-  <button class="nav-btn" onclick="showPage('settings', this)">Settings</button>
+  <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard', this)">Dashboard</button>
+  <button class="nav-btn" data-page="settings" onclick="showPage('settings', this)">Settings</button>
   <div class="header-spacer"></div>
   <div class="conn-pill">
     <span class="conn-dot" id="conn-dot"></span>
@@ -1162,6 +1233,75 @@ header {
 
 <!-- ══════════════════ DASHBOARD ══════════════════ -->
 <div class="page active" id="page-dashboard">
+  <div class="create-section" id="create-section">
+    <div class="create-head">
+      <div>
+        <span class="section-lbl">Create Tickets - ⌘ / Ctrl + Enter in quick add to append.</span>
+      </div>
+    </div>
+    <div class="create-grid">
+      <div class="create-form">
+        <div class="settings-group">
+          <div class="form-row">
+            <label class="form-lbl" for="ct-project">Project Key</label>
+            <input type="text" id="ct-project" class="form-input" placeholder="e.g. ENG" style="max-width:160px">
+          </div>
+
+          <div class="form-row">
+            <label class="form-lbl" for="ct-bulk">Quick Add Multiple</label>
+            <textarea id="ct-bulk" class="form-ta" rows="3" placeholder="Paste bullet list or one idea per line"></textarea>
+            <div class="ct-bulk-actions">
+              <button class="btn-secondary" onclick="bulkAddTickets()" type="button">Add lines</button>
+              <button class="btn-ghost" onclick="clearBulkInput()" type="button">Clear</button>
+              <span class="form-hint">Prefixes like '-' or '*' are stripped automatically.</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-lbl">Tickets <em>Codex will generate titles, descriptions &amp; components</em></label>
+            <div class="ct-list" id="ct-list"></div>
+            <button class="btn-add-ticket" onclick="addTicketInput()" type="button">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add ticket
+            </button>
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn-primary" id="ct-submit" onclick="previewTickets()" type="button">Queue Previews</button>
+            <div class="btn-spinner" id="ct-spinner">
+              <div class="spinner"></div>
+              <span id="ct-spinner-label">Queueing previews…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="create-preview">
+        <div class="preview-board">
+          <div class="card preview-list-card">
+            <div class="card-head">
+              <div class="card-label">Preview Jobs</div>
+              <button class="btn-ghost" onclick="loadPreviewJobs()" id="ct-refresh-jobs" type="button">Refresh</button>
+            </div>
+            <div class="preview-jobs-list" id="ct-jobs"></div>
+          </div>
+          <div class="card preview-detail-card">
+            <div class="card-head">
+              <div class="card-label" id="ct-detail-head">Select a preview job</div>
+            </div>
+            <div class="preview-detail-body" id="ct-job-detail">
+              <div class="preview-empty-state">No preview selected yet.</div>
+            </div>
+            <div class="ct-log-panel" id="ct-log-panel">
+              <div class="ct-log-head">Codex Output</div>
+              <div class="ct-log-inner" id="ct-log-inner"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="dash-grid">
 
     <!-- Main column -->
@@ -1400,57 +1540,6 @@ header {
   </div>
 </div>
 
-<!-- ══════════════════ CREATE TICKET ══════════════════ -->
-<div class="page" id="page-create">
-  <div class="settings-group">
-    <div class="sg-title">Create JIRA Tickets</div>
-
-    <div class="form-row">
-      <label class="form-lbl" for="ct-project">Project Key</label>
-      <input type="text" id="ct-project" class="form-input" placeholder="e.g. ENG" style="max-width:160px">
-    </div>
-
-    <div class="form-row">
-      <label class="form-lbl">Tickets <em>Codex will generate titles, descriptions &amp; components</em></label>
-      <div class="ct-list" id="ct-list"></div>
-      <button class="btn-add-ticket" onclick="addTicketInput()">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add ticket
-      </button>
-    </div>
-
-    <div class="settings-actions">
-      <button class="btn-primary" id="ct-submit" onclick="previewTickets()">Queue Previews</button>
-      <div class="btn-spinner" id="ct-spinner">
-        <div class="spinner"></div>
-        <span id="ct-spinner-label">Queueing previews…</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="preview-board">
-    <div class="card preview-list-card">
-      <div class="card-head">
-        <div class="card-label">Preview Jobs</div>
-        <button class="btn-ghost" onclick="loadPreviewJobs()" id="ct-refresh-jobs">Refresh</button>
-      </div>
-      <div class="preview-jobs-list" id="ct-jobs"></div>
-    </div>
-    <div class="card preview-detail-card">
-      <div class="card-head">
-        <div class="card-label" id="ct-detail-head">Select a preview job</div>
-      </div>
-      <div class="preview-detail-body" id="ct-job-detail">
-        <div class="preview-empty-state">No preview selected yet.</div>
-      </div>
-      <div class="ct-log-panel" id="ct-log-panel">
-        <div class="ct-log-head">Codex Output</div>
-        <div class="ct-log-inner" id="ct-log-inner"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
 // ── STATE ──────────────────────────────────────────────────────
 let currentKey  = null;
@@ -1536,11 +1625,10 @@ async function sendNotification(title, body) {
 // ── NAV ────────────────────────────────────────────────────────
 function showPage(id, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-btn[data-page]').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
-  btn.classList.add('active');
+  if (btn?.dataset?.page) btn.classList.add('active');
   if (id === 'settings') loadSettings();
-  if (id === 'create') loadCreatePage();
 }
 
 function switchTab(id, btn) {
@@ -2028,26 +2116,45 @@ let previewJobDetail = null;
 let previewLogTimer = null;
 let previewLogSinceId = 0;
 
-async function loadCreatePage() {
-  if (document.getElementById('ct-list').children.length === 0) addTicketInput();
+let createInitialized = false;
+
+async function ensureCreateInitialized() {
+  if (createInitialized) return;
+  createInitialized = true;
+  const listEl = document.getElementById('ct-list');
+  if (listEl && listEl.children.length === 0) addTicketInput();
   const data = await api('/api/settings');
   if (data?.settings?.create_ticket_project_key) {
     const el = document.getElementById('ct-project');
-    if (!el.value) el.value = data.settings.create_ticket_project_key;
+    if (el && !el.value) el.value = data.settings.create_ticket_project_key;
   }
   await loadPreviewJobs();
+  const bulkEl = document.getElementById('ct-bulk');
+  if (bulkEl && !bulkEl.dataset.bound) {
+    bulkEl.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        bulkAddTickets();
+      }
+    });
+    bulkEl.dataset.bound = '1';
+  }
 }
 
-function addTicketInput() {
-  const id = ctNextId++;
+function addTicketInput(prefill = {}) {
   const list = document.getElementById('ct-list');
+  if (!list) return;
+  const id = ctNextId++;
   const div = document.createElement('div');
   div.className = 'ct-item';
   div.id = `ct-item-${id}`;
   div.innerHTML =
     `<div class="ct-item-head">` +
       `<span class="ct-item-num" id="ct-num-${id}"></span>` +
-      `<button class="ct-item-remove" onclick="removeTicketInput(${id})">Remove</button>` +
+      `<div class="ct-head-actions">` +
+        `<button class="ct-item-duplicate" type="button" onclick="duplicateTicketInput(${id})">Duplicate</button>` +
+        `<button class="ct-item-remove" type="button" onclick="removeTicketInput(${id})">Remove</button>` +
+      `</div>` +
     `</div>` +
     `<textarea class="form-ta ct-desc" rows="5" placeholder="Describe what needs to be done. Be as rough or detailed as you like."></textarea>` +
     `<div class="ct-item-options">` +
@@ -2060,14 +2167,58 @@ function addTicketInput() {
       `</div>` +
     `</div>`;
   list.appendChild(div);
+  const text = (prefill.text || '').trim();
+  const enrich = !!prefill.enrich_with_code;
+  const repos = prefill.code_context_repos || '';
+  const ta = div.querySelector('.ct-desc');
+  ta.value = text;
+  const cb = div.querySelector('.ct-enrich-cb');
+  cb.checked = enrich;
+  const reposRow = div.querySelector('.ct-repos-row');
+  const reposInput = div.querySelector('.ct-repos-input');
+  if (enrich) {
+    reposRow.style.display = 'flex';
+  }
+  if (repos) reposInput.value = repos;
   renumberTickets();
-  div.querySelector('textarea').focus();
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+}
+
+function duplicateTicketInput(id) {
+  const item = document.getElementById(`ct-item-${id}`);
+  if (!item) return;
+  const text = item.querySelector('.ct-desc')?.value || '';
+  const enrich = item.querySelector('.ct-enrich-cb')?.checked || false;
+  const repos = item.querySelector('.ct-repos-input')?.value || '';
+  addTicketInput({ text, enrich_with_code: enrich, code_context_repos: repos });
 }
 
 function removeTicketInput(id) {
   const el = document.getElementById(`ct-item-${id}`);
   if (el) el.remove();
   renumberTickets();
+}
+
+function bulkAddTickets() {
+  const bulkEl = document.getElementById('ct-bulk');
+  if (!bulkEl) return;
+  const lines = bulkEl.value
+    .split(/\n+/)
+    .map(line => line.replace(/^[-*]\s+/, '').trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    alert('Nothing to add. Provide at least one line.');
+    return;
+  }
+  lines.forEach(text => addTicketInput({ text }));
+  bulkEl.value = '';
+  renumberTickets();
+}
+
+function clearBulkInput() {
+  const bulkEl = document.getElementById('ct-bulk');
+  if (bulkEl) bulkEl.value = '';
 }
 
 function renumberTickets() {
@@ -2452,6 +2603,7 @@ document.addEventListener('DOMContentLoaded', () => {
   refresh();
   connectSSE();
   setInterval(refresh, 30000);
+  ensureCreateInitialized();
 });
 </script>
 </body>
