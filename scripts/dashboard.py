@@ -34,6 +34,8 @@ def handle_dashboard_request(handler, method="GET") -> bool:
     routes = {
         "/dashboard": _serve_html,
         "/dashboard/settings": _serve_html,
+        "/favicon.svg": _serve_favicon,
+        "/favicon.ico": _serve_favicon,
         "/api/status": _api_status,
         "/api/queue": _api_queue,
         "/api/tickets": _api_tickets,
@@ -83,6 +85,22 @@ def _serve_html(handler):
         content = f.read()
     handler.send_response(200)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Content-Length", str(len(content)))
+    handler.end_headers()
+    handler.wfile.write(content)
+
+
+def _serve_favicon(handler):
+    icon_path = os.path.join(STATIC_DIR, "favicon.svg")
+    if not os.path.exists(icon_path):
+        handler.send_response(404)
+        handler.end_headers()
+        return
+    with open(icon_path, "rb") as f:
+        content = f.read()
+    handler.send_response(200)
+    handler.send_header("Content-Type", "image/svg+xml")
+    handler.send_header("Cache-Control", "public, max-age=86400")
     handler.send_header("Content-Length", str(len(content)))
     handler.end_headers()
     handler.wfile.write(content)
