@@ -286,10 +286,18 @@ def _enhance_with_codex(
             with open(os.path.join(_prompts_dir, "code_context.md"), encoding="utf-8") as f:
                 prompt_code_tpl = f.read()
         repos_hint = code_context_repos.strip() or "the relevant repositories in the workspace"
-        code_context_instructions = prompt_code_tpl.format(
-            raw_description=raw_description,
-            code_context_repos=repos_hint,
-        ).strip()
+        inline_placeholder = "this response (summarize inline; do not create files)"
+        format_kwargs = {
+            "raw_description": raw_description,
+            "code_context_repos": repos_hint,
+            "context_path": inline_placeholder,
+        }
+        try:
+            code_context_instructions = prompt_code_tpl.format(**format_kwargs).strip()
+        except KeyError as exc:  # surface a clearer error for misconfigured prompts
+            raise RuntimeError(
+                f"Code context prompt is missing placeholder: {exc}"
+            ) from exc
         if code_context_instructions:
             code_context_str = f"{code_context_instructions}\n\n"
 
