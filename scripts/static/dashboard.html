@@ -1265,11 +1265,11 @@ header {
         </div>
       </div>
       <div class="form-row">
-        <label class="form-lbl" for="s-ct-context-prompt">Code Context Prompt <em>used when "Check codebase for context" is enabled</em></label>
+        <label class="form-lbl" for="s-ct-context-prompt">Code Context Prompt <em>appended inline when "Check codebase for context" is enabled</em></label>
         <textarea id="s-ct-context-prompt" class="form-ta" rows="10"></textarea>
         <div class="ph-tags">
           <span class="ph-tag" onclick="ins('s-ct-context-prompt','{raw_description}')">&#123;raw_description&#125;</span>
-          <span class="ph-tag" onclick="ins('s-ct-context-prompt','{context_path}')">&#123;context_path&#125;</span>
+          <span class="ph-tag" onclick="ins('s-ct-context-prompt','{code_context_repos}')">&#123;code_context_repos&#125;</span>
         </div>
       </div>
     </div>

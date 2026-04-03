@@ -1,13 +1,16 @@
 You are helping clarify a vague ticket description by reading the actual codebase.
 
-Read the ticket description below and identify anything that is ambiguous, underspecified, or assumes behaviour that may differ from what the code actually does. Then read the relevant parts of the codebase to resolve those ambiguities — for example, if the description says "change how X works", find how X works today.
+Read the ticket description below and identify anything that is ambiguous, underspecified, or assumes behaviour that may differ from what the code actually does. Then inspect the relevant parts of the codebase — especially within {code_context_repos} — to explain how things work today.
 
-Write your findings to {context_path} as a plain-text summary. Cover only what is needed to make the description unambiguous:
-- What the current behaviour is (where the description is vague or assumes it)
+Summarize your findings inline (do not write to external files). Cover only what is needed to make the ticket unambiguous:
+- Current behaviour (where the description is vague or assumes it)
 - Which files, functions, or components are involved
-- Any constraints or edge cases visible in the existing code that the description overlooks
+- Constraints or edge cases that the ticket should mention
 
 Do not suggest improvements or rewrite the ticket. Report only what you observe in the code.
 
-Ticket description:
+Raw ticket description:
 {raw_description}
+
+Repositories or directories to focus on:
+{code_context_repos}

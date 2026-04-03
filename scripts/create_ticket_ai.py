@@ -232,58 +232,12 @@ def add_to_sprint(sprint_id: int, issue_key: str):
 # Codex enhancement
 # ---------------------------------------------------------------------------
 
-def _gather_code_context(raw_description: str, repos: str = "") -> str:
-    """Run Codex to find code relevant to the ticket description and return a summary."""
-    from scripts import db
-
-    context_path = os.path.join(_TICKET_DRAFT_DIR, "code_context.txt")
-
-    prompt_tpl = db.get_setting("prompt_code_context", "")
-    if not prompt_tpl:
-        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
-        with open(os.path.join(_prompts_dir, "code_context.md"), encoding="utf-8") as f:
-            prompt_tpl = f.read()
-
-    prompt = prompt_tpl.format(context_path=context_path, raw_description=raw_description)
-    if repos:
-        prompt += f"\n\nFocus your exploration on these repositories/directories: {repos}"
-
-    cmd = ["codex", "exec", "--full-auto", "--skip-git-repo-check"]
-    model = db.get_setting("create_ticket_model", "") or db.get_setting("model", "")
-    if model:
-        cmd += ["-m", model]
-    effort = db.get_setting("create_ticket_effort", "") or db.get_setting("effort", "")
-    if effort and effort != "none":
-        cmd += ["-c", f"reasoning_effort={effort}"]
-    cmd.append(prompt)
-
-    try:
-        os.remove(context_path)
-    except FileNotFoundError:
-        pass
-
-    _ensure_ticket_draft_dir()
-    result = _run_codex(cmd, cwd=_PROJECT_DIR)
-
-    if result.returncode != 0 or not os.path.isfile(context_path):
-        return ""
-
-    with open(context_path, encoding="utf-8") as f:
-        context = f.read().strip()
-
-    try:
-        os.remove(context_path)
-    except FileNotFoundError:
-        pass
-
-    return context
-
-
 def _enhance_with_codex(
     raw_description: str,
     components: list[str],
     issue_types: list[str],
-    code_context: str = "",
+    include_code_instructions: bool = False,
+    code_context_repos: str = "",
 ) -> dict:
     """Run Codex to turn a raw description into structured ticket fields.
 
@@ -324,10 +278,20 @@ def _enhance_with_codex(
         with open(os.path.join(_prompts_dir, "create_ticket.md"), encoding="utf-8") as f:
             prompt_tpl = f.read()
 
-    code_context_str = (
-        f"Relevant code context from the repository:\n{code_context}\n\n"
-        if code_context else ""
-    )
+    code_context_str = ""
+    if include_code_instructions:
+        prompt_code_tpl = db.get_setting("prompt_code_context", "")
+        if not prompt_code_tpl:
+            _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+            with open(os.path.join(_prompts_dir, "code_context.md"), encoding="utf-8") as f:
+                prompt_code_tpl = f.read()
+        repos_hint = code_context_repos.strip() or "the relevant repositories in the workspace"
+        code_context_instructions = prompt_code_tpl.format(
+            raw_description=raw_description,
+            code_context_repos=repos_hint,
+        ).strip()
+        if code_context_instructions:
+            code_context_str = f"{code_context_instructions}\n\n"
 
     prompt = prompt_tpl.format(
         components=components_str,
@@ -404,11 +368,10 @@ def enhance_ticket_description(
     code_context_repos: str = "",
 ) -> dict:
     """
-    Step 1 of the two-step flow: run Codex to enhance the description and
-    return the structured fields WITHOUT creating the ticket.
-
-    When enrich_with_code is True, first runs Codex to gather relevant code
-    context from the workspace and includes it in the enhancement prompt.
+    Step 1 of the two-step flow: run Codex once to enhance the description and
+    return the structured fields WITHOUT creating the ticket. When
+    enrich_with_code is True, the prompt includes inline instructions for Codex
+    to inspect the repository code before writing the ticket.
 
     Returns a dict with: summary, issue_type, components, description,
     available_components, available_issue_types.
@@ -424,9 +387,13 @@ def enhance_ticket_description(
         allowed = [t.strip() for t in allowed_raw.split(",") if t.strip()]
         issue_types = [it for it in issue_types if it in allowed] or issue_types
 
-    code_context = _gather_code_context(raw_description, repos=code_context_repos) if enrich_with_code else ""
-
-    enhanced = _enhance_with_codex(raw_description, components, issue_types, code_context=code_context)
+    enhanced = _enhance_with_codex(
+        raw_description,
+        components,
+        issue_types,
+        include_code_instructions=enrich_with_code,
+        code_context_repos=code_context_repos,
+    )
     return {
         **enhanced,
         "available_components": components,
