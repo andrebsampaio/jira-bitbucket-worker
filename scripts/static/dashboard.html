@@ -2213,9 +2213,24 @@ function bulkAddTickets() {
     alert('Nothing to add. Provide at least one line.');
     return;
   }
+  removeEmptyPlaceholderTicket();
   lines.forEach(text => addTicketInput({ text }));
   bulkEl.value = '';
   renumberTickets();
+}
+
+function removeEmptyPlaceholderTicket() {
+  const list = document.getElementById('ct-list');
+  if (!list) return;
+  const items = list.querySelectorAll('.ct-item');
+  if (items.length !== 1) return;
+  const item = items[0];
+  const desc = item.querySelector('.ct-desc')?.value.trim();
+  const repos = item.querySelector('.ct-repos-input')?.value.trim();
+  const enrich = item.querySelector('.ct-enrich-cb')?.checked;
+  if (!desc && !repos && !enrich) {
+    item.remove();
+  }
 }
 
 function clearBulkInput() {
