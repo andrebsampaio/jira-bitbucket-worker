@@ -45,6 +45,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         "/api/settings": _api_settings_get,
         "/api/stream": _api_stream,
         "/api/jira-projects": _api_jira_projects,
+        "/api/preview-jobs": _api_preview_jobs,
     }
 
     route_fn = routes.get(path)
@@ -55,6 +56,12 @@ def handle_dashboard_request(handler, method="GET") -> bool:
     # Dynamic routes
     if path.startswith("/api/logs/"):
         _api_logs(handler, path[len("/api/logs/"):])
+        return True
+    if path.startswith("/api/preview-jobs/"):
+        _api_preview_job_detail(handler, path[len("/api/preview-jobs/"):])
+        return True
+    if path.startswith("/api/preview-logs/"):
+        _api_preview_logs(handler, path[len("/api/preview-logs/"):])
         return True
 
     return False
@@ -122,6 +129,41 @@ def _api_logs(handler, issue_key: str):
             except ValueError:
                 pass
     logs = db.get_ticket_logs(issue_key, since_id)
+    _send_json(handler, {"logs": logs})
+
+
+def _api_preview_jobs(handler):
+    query = handler.path.split("?", 1)[1] if "?" in handler.path else ""
+    limit = 100
+    for param in query.split("&"):
+        if param.startswith("limit="):
+            try:
+                limit = max(1, min(500, int(param.split("=", 1)[1])))
+            except ValueError:
+                pass
+    _send_json(handler, {"jobs": db.get_preview_jobs(limit=limit)})
+
+
+def _api_preview_job_detail(handler, job_id: str):
+    job = db.get_preview_job(job_id)
+    if not job:
+        handler.send_response(404)
+        handler.end_headers()
+        return
+    _send_json(handler, {"job": job})
+
+
+def _api_preview_logs(handler, job_id: str):
+    query = handler.path.split("?", 1)[1] if "?" in handler.path else ""
+    since_id = 0
+    for param in query.split("&"):
+        if param.startswith("since_id="):
+            try:
+                since_id = int(param.split("=", 1)[1])
+            except ValueError:
+                pass
+    from scripts.create_ticket_ai import preview_log_key
+    logs = db.get_ticket_logs(preview_log_key(job_id), since_id)
     _send_json(handler, {"logs": logs})
 
 
@@ -205,6 +247,22 @@ def _api_settings_save(handler):
 
 
 def _api_cancel_preview(handler):
+    content_length = int(handler.headers.get("Content-Length", 0) or 0)
+    payload = {}
+    if content_length:
+        body = handler.rfile.read(content_length)
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = {}
+
+    job_id = (payload.get("job_id") or "").strip()
+    if job_id:
+        from scripts.create_ticket_ai import cancel_preview_job
+        cancelled = cancel_preview_job(job_id)
+        _send_json(handler, {"cancelled": cancelled, "job_id": job_id})
+        return
+
     from scripts.create_ticket_ai import cancel_preview
     cancelled = cancel_preview()
     _send_json(handler, {"cancelled": cancelled})
@@ -253,20 +311,9 @@ def _api_preview_ticket(handler):
         handler.wfile.write(json.dumps({"error": "project_key and descriptions are required"}).encode())
         return
 
-    from scripts.create_ticket_ai import enhance_ticket_description
-
-    results = []
-    for item in ticket_inputs:
-        try:
-            preview = enhance_ticket_description(
-                project_key, item["text"], enrich_with_code=item["enrich_with_code"],
-                code_context_repos=item["code_context_repos"]
-            )
-            results.append({"ok": True, "preview": preview})
-        except Exception as exc:
-            results.append({"ok": False, "error": str(exc)})
-
-    _send_json(handler, {"ok": True, "results": results})
+    from scripts.create_ticket_ai import enqueue_preview_jobs
+    jobs = enqueue_preview_jobs(project_key, ticket_inputs)
+    _send_json(handler, {"ok": True, "jobs": jobs})
 
 
 def _api_create_ticket(handler):
@@ -294,6 +341,7 @@ def _api_create_ticket(handler):
 
     results = []
     for ticket in tickets:
+        preview_job_id = (ticket.get("preview_job_id") or "").strip()
         try:
             result = create_ticket_from_enhanced(
                 project_key=project_key,
@@ -303,9 +351,11 @@ def _api_create_ticket(handler):
                 components=[c for c in ticket.get("components", []) if c],
             )
             db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
-            results.append({"ok": True, "result": result})
+            if preview_job_id:
+                db.preview_job_ticket_created(preview_job_id, result["issue_key"], result["issue_url"])
+            results.append({"ok": True, "result": result, "preview_job_id": preview_job_id})
         except Exception as exc:
-            results.append({"ok": False, "error": str(exc)})
+            results.append({"ok": False, "error": str(exc), "preview_job_id": preview_job_id})
 
     _send_json(handler, {"ok": True, "results": results})
 

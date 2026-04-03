@@ -7,10 +7,12 @@ creates it in JIRA and adds it to the active sprint when one is found.
 
 import json
 import os
+import queue
 import signal
 import subprocess
 import tempfile
 import threading
+import uuid
 
 import requests
 from dotenv import load_dotenv
@@ -37,17 +39,23 @@ def _ensure_ticket_draft_dir() -> None:
 
 _preview_proc: subprocess.Popen | None = None
 _preview_lock = threading.Lock()
+_current_preview_job_key: str | None = None
+_preview_job_queue: queue.Queue[str] = queue.Queue()
+_preview_worker_thread: threading.Thread | None = None
 
 
 class PreviewCancelledError(RuntimeError):
     pass
 
 
-def cancel_preview() -> bool:
+def cancel_preview(job_key: str | None = None) -> bool:
     """Kill the currently running preview Codex subprocess. Returns True if one was running."""
     with _preview_lock:
         proc = _preview_proc
+        current_key = _current_preview_job_key
     if proc is None:
+        return False
+    if job_key and job_key != current_key:
         return False
     try:
         pgid = os.getpgid(proc.pid)
@@ -62,15 +70,29 @@ def cancel_preview() -> bool:
 
 
 _PREVIEW_LOG_KEY = "__preview__"
+_PREVIEW_LOG_PREFIX = "preview:"
 
 
-def _run_codex(cmd: list[str], cwd: str = WORKSPACE_PATH) -> subprocess.CompletedProcess:
+def preview_log_key(job_id: str) -> str:
+    return f"{_PREVIEW_LOG_PREFIX}{job_id}"
+
+
+def _run_codex(
+    cmd: list[str],
+    cwd: str = WORKSPACE_PATH,
+    *,
+    log_key: str | None = None,
+    clear_logs: bool = True,
+    preview_job_key: str | None = None,
+) -> subprocess.CompletedProcess:
     """Run a Codex command, streaming each output line to the DB log and storing
     the process reference so it can be cancelled."""
     from scripts import db
     global _preview_proc
 
-    db.clear_ticket_logs(_PREVIEW_LOG_KEY)
+    log_key = log_key or _PREVIEW_LOG_KEY
+    if clear_logs:
+        db.clear_ticket_logs(log_key)
 
     proc = subprocess.Popen(
         cmd,
@@ -82,7 +104,9 @@ def _run_codex(cmd: list[str], cwd: str = WORKSPACE_PATH) -> subprocess.Complete
         start_new_session=True,
     )
     with _preview_lock:
+        global _current_preview_job_key
         _preview_proc = proc
+        _current_preview_job_key = preview_job_key
 
     lines: list[str] = []
     timeout_hit = False
@@ -106,12 +130,13 @@ def _run_codex(cmd: list[str], cwd: str = WORKSPACE_PATH) -> subprocess.Complete
         for line in proc.stdout:
             line = line.rstrip("\n")
             lines.append(line)
-            db.log_line(_PREVIEW_LOG_KEY, line)
+            db.log_line(log_key, line)
         proc.wait()
     finally:
         timer.cancel()
         with _preview_lock:
             _preview_proc = None
+            _current_preview_job_key = None
 
     if timeout_hit:
         raise RuntimeError(f"Codex timed out after {timeout_secs} seconds")
@@ -119,6 +144,120 @@ def _run_codex(cmd: list[str], cwd: str = WORKSPACE_PATH) -> subprocess.Complete
         raise PreviewCancelledError("Preview was cancelled")
 
     return subprocess.CompletedProcess(cmd, proc.returncode, "\n".join(lines), "")
+
+
+def _new_preview_job_id() -> str:
+    return f"pv-{uuid.uuid4().hex[:12]}"
+
+
+def _new_preview_batch_id() -> str:
+    return f"pvb-{uuid.uuid4().hex[:10]}"
+
+
+def _ensure_preview_worker() -> None:
+    global _preview_worker_thread
+    if _preview_worker_thread and _preview_worker_thread.is_alive():
+        return
+    from scripts import db
+
+    _preview_worker_thread = threading.Thread(target=_preview_worker_loop, daemon=True, name="preview-worker")
+    _preview_worker_thread.start()
+    # Requeue any jobs that were pending before the server started
+    pending_ids = db.get_preview_job_ids_by_status(("queued", "processing"))
+    for job_id in pending_ids:
+        _preview_job_queue.put(job_id)
+
+
+def _preview_worker_loop():
+    from scripts import db
+
+    while True:
+        job_id = _preview_job_queue.get()
+        try:
+            job = db.get_preview_job(job_id)
+            if not job or job.get("status") not in {"queued", "processing"}:
+                continue
+            db.preview_job_started(job_id)
+            try:
+                preview = enhance_ticket_description(
+                    job["project_key"],
+                    job["description"],
+                    enrich_with_code=bool(job.get("enrich_with_code")),
+                    code_context_repos=job.get("code_context_repos") or "",
+                    log_key=preview_log_key(job_id),
+                    preview_job_key=job_id,
+                )
+                db.preview_job_finished(job_id, preview)
+            except PreviewCancelledError:
+                db.preview_job_cancelled(job_id)
+            except Exception as exc:
+                db.preview_job_failed(job_id, str(exc))
+        finally:
+            _preview_job_queue.task_done()
+
+
+def enqueue_preview_jobs(
+    project_key: str,
+    ticket_inputs: list[dict],
+    *,
+    batch_id: str | None = None,
+) -> list[dict]:
+    """Queue preview jobs for async processing."""
+    from scripts import db
+
+    valid_inputs = []
+    for item in ticket_inputs:
+        text = (item.get("text") or "").strip()
+        if text:
+            valid_inputs.append({**item, "text": text})
+    if not valid_inputs:
+        return []
+
+    _ensure_preview_worker()
+    batch = batch_id or _new_preview_batch_id()
+    jobs: list[dict] = []
+
+    for item in valid_inputs:
+        description = item["text"]
+        job_id = _new_preview_job_id()
+        db.preview_job_created(
+            job_id=job_id,
+            batch_id=batch,
+            project_key=project_key,
+            description=description,
+            enrich_with_code=bool(item.get("enrich_with_code")),
+            code_context_repos=(item.get("code_context_repos") or "").strip(),
+        )
+        _preview_job_queue.put(job_id)
+        jobs.append(db.get_preview_job(job_id))
+
+    return jobs
+
+
+def cancel_preview_job(job_id: str) -> bool:
+    """Cancel a queued or running preview job."""
+    from scripts import db
+
+    job = db.get_preview_job(job_id)
+    if not job:
+        return False
+
+    status = job.get("status")
+    if status in {"done", "failed", "cancelled", "created"}:
+        return False
+
+    if status == "processing":
+        cancelled = cancel_preview(job_id)
+        if not cancelled:
+            return False
+        db.preview_job_cancelled(job_id)
+        return True
+
+    if status == "queued":
+        db.preview_job_cancelled(job_id)
+        return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +377,10 @@ def _enhance_with_codex(
     issue_types: list[str],
     include_code_instructions: bool = False,
     code_context_repos: str = "",
+    *,
+    log_key: str | None = None,
+    preview_job_key: str | None = None,
+    clear_logs: bool = True,
 ) -> dict:
     """Run Codex to turn a raw description into structured ticket fields.
 
@@ -329,7 +472,13 @@ def _enhance_with_codex(
             pass
 
     _ensure_ticket_draft_dir()
-    result = _run_codex(cmd, cwd=_PROJECT_DIR)
+    result = _run_codex(
+        cmd,
+        cwd=_PROJECT_DIR,
+        log_key=log_key,
+        clear_logs=clear_logs,
+        preview_job_key=preview_job_key,
+    )
     if result.returncode != 0:
         raise RuntimeError(
             f"Codex exited with code {result.returncode}:\n{result.stderr or result.stdout}"
@@ -374,6 +523,10 @@ def enhance_ticket_description(
     raw_description: str,
     enrich_with_code: bool = False,
     code_context_repos: str = "",
+    *,
+    log_key: str | None = None,
+    preview_job_key: str | None = None,
+    clear_logs: bool = True,
 ) -> dict:
     """
     Step 1 of the two-step flow: run Codex once to enhance the description and
@@ -401,6 +554,9 @@ def enhance_ticket_description(
         issue_types,
         include_code_instructions=enrich_with_code,
         code_context_repos=code_context_repos,
+        log_key=log_key,
+        preview_job_key=preview_job_key,
+        clear_logs=clear_logs,
     )
     return {
         **enhanced,

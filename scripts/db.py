@@ -56,6 +56,26 @@ CREATE TABLE IF NOT EXISTS ticket_logs (
     line       TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS preview_jobs (
+    id                 TEXT PRIMARY KEY,
+    batch_id           TEXT,
+    project_key        TEXT NOT NULL,
+    description        TEXT NOT NULL,
+    enrich_with_code   INTEGER NOT NULL DEFAULT 0,
+    code_context_repos TEXT,
+    status             TEXT NOT NULL DEFAULT 'queued',
+    created_at         REAL NOT NULL,
+    started_at         REAL,
+    finished_at        REAL,
+    error              TEXT,
+    preview_json       TEXT,
+    summary            TEXT,
+    issue_type         TEXT,
+    components_json    TEXT,
+    created_issue_key  TEXT,
+    created_issue_url  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS webhook_health (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     last_received   REAL,
@@ -258,6 +278,31 @@ def _row_to_dict(row) -> dict:
     return dict(row) if row else {}
 
 
+def _preview_row_to_dict(row) -> dict:
+    if not row:
+        return {}
+    data = dict(row)
+    preview_raw = data.pop("preview_json", None)
+    components_raw = data.pop("components_json", None)
+    if preview_raw:
+        try:
+            data["preview"] = json.loads(preview_raw)
+        except json.JSONDecodeError:
+            data["preview"] = None
+    else:
+        data["preview"] = None
+    if components_raw:
+        try:
+            data["components"] = json.loads(components_raw)
+        except json.JSONDecodeError:
+            data["components"] = []
+    else:
+        data["components"] = []
+    data["enrich_with_code"] = bool(data.get("enrich_with_code"))
+    data["log_key"] = f"preview:{data['id']}"
+    return data
+
+
 def get_worker_status() -> dict:
     """Return current processing state."""
     with _connect() as conn:
@@ -387,6 +432,121 @@ def get_all_settings() -> dict:
     with _connect() as conn:
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
     return {r["key"]: r["value"] for r in rows}
+
+
+# -- Preview jobs -------------------------------------------------------------
+
+def _notify_preview_job(row):
+    if row:
+        _notify("preview_job_update", {"job": _preview_row_to_dict(row)})
+
+
+def preview_job_created(job_id: str, batch_id: str, project_key: str, description: str,
+                        enrich_with_code: bool, code_context_repos: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO preview_jobs
+               (id, batch_id, project_key, description, enrich_with_code,
+                code_context_repos, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)""",
+            (job_id, batch_id, project_key, description, int(enrich_with_code), code_context_repos, now),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def preview_job_started(job_id: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE preview_jobs SET status='processing', started_at=? WHERE id=? AND status IN ('queued','processing')",
+            (now, job_id),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def preview_job_finished(job_id: str, preview: dict):
+    now = time.time()
+    preview_json = json.dumps(preview)
+    components = preview.get("components") or []
+    with _connect() as conn:
+        conn.execute(
+            """UPDATE preview_jobs
+               SET status='done', finished_at=?, preview_json=?, summary=?, issue_type=?, components_json=?, error=NULL
+               WHERE id=?""",
+            (
+                now,
+                preview_json,
+                preview.get("summary") or "",
+                preview.get("issue_type") or "",
+                json.dumps(components),
+                job_id,
+            ),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def preview_job_failed(job_id: str, error: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE preview_jobs SET status='failed', finished_at=?, error=? WHERE id=?",
+            (now, error[:2000], job_id),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def preview_job_cancelled(job_id: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE preview_jobs SET status='cancelled', finished_at=? WHERE id=? AND status!='created'",
+            (now, job_id),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def preview_job_ticket_created(job_id: str, issue_key: str, issue_url: str):
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE preview_jobs SET status='created', finished_at=COALESCE(finished_at, ?), created_issue_key=?, created_issue_url=? WHERE id=?",
+            (now, issue_key, issue_url, job_id),
+        )
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    _notify_preview_job(row)
+
+
+def get_preview_jobs(limit: int = 50) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM preview_jobs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_preview_row_to_dict(r) for r in rows]
+
+
+def get_preview_job(job_id: str) -> dict:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM preview_jobs WHERE id=?", (job_id,)).fetchone()
+    return _preview_row_to_dict(row)
+
+
+def get_preview_job_ids_by_status(statuses: tuple[str, ...]) -> list[str]:
+    if not statuses:
+        return []
+    placeholders = ",".join("?" for _ in statuses)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM preview_jobs WHERE status IN ({placeholders}) ORDER BY created_at ASC",
+            statuses,
+        ).fetchall()
+    return [r["id"] for r in rows]
 
 
 # Initialize on import

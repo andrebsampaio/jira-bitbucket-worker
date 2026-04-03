@@ -642,7 +642,6 @@ header {
 
 /* ── SETTINGS PAGE ──────────────────────────────────────────── */
 #page-settings {
-  max-width: 700px;
   margin: 0 auto;
   padding: 28px 24px 48px;
 }
@@ -764,7 +763,6 @@ header {
 
 /* ── CREATE TICKET PAGE ─────────────────────────────────────── */
 #page-create {
-  max-width: 700px;
   margin: 0 auto;
   padding: 28px 24px 48px;
 }
@@ -816,17 +814,133 @@ header {
 }
 .ct-item .form-ta:focus { border-color: transparent; box-shadow: none; outline: none; }
 
+.preview-board {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+.preview-list-card,
+.preview-detail-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+}
+.preview-jobs-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+}
+.preview-empty-list {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 18px;
+  text-align: center;
+}
+.preview-job {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .1s;
+}
+.preview-job:hover { background: var(--surface-2); }
+.preview-job.active { background: var(--surface-2); border-left: 3px solid var(--blue); }
+.preview-job-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.preview-job-meta {
+  font-size: 12px;
+  color: var(--text-3);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.preview-status {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  margin-left: auto;
+}
+.preview-status.queued { color: var(--amber); border-color: var(--amber-line); }
+.preview-status.processing { color: var(--blue); border-color: var(--blue-line); }
+.preview-status.done { color: var(--green); border-color: var(--green-line); }
+.preview-status.failed { color: var(--red); border-color: var(--red-line); }
+.preview-status.cancelled { color: var(--text-3); border-color: var(--border); }
+.preview-status.created { color: var(--green); border-color: var(--green-line); background: var(--green-dim); }
+
+.preview-detail-body {
+  padding: 18px;
+  flex: 1;
+}
+.preview-empty-state {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  padding: 30px 0;
+}
+.preview-detail-body .cr-preview-field { margin-bottom: 14px; }
+.preview-detail-body .cr-preview-label { font-size: 12px; color: var(--text-3); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }
+.preview-detail-body .cr-preview-input { width: 100%; }
+.preview-state {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
+.preview-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.preview-meta {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+.preview-error {
+  color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid var(--red-line);
+  border-radius: var(--r2);
+  padding: 12px;
+  font-size: 13px;
+}
+.preview-created {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--green-line);
+  border-radius: var(--r2);
+  color: var(--green);
+  font-size: 13px;
+}
+
 .ct-log-panel {
   display: none;
   background: var(--term-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  overflow: hidden;
-  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+.preview-detail-card .ct-log-panel {
+  border-bottom-left-radius: var(--r3);
+  border-bottom-right-radius: var(--r3);
 }
 .ct-log-panel.show { display: block; }
+.ct-log-head {
+  padding: 8px 14px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
 .ct-log-inner {
-  height: 180px;
+  height: 160px;
   overflow-y: auto;
   padding: 10px 12px;
   font-family: var(--mono);
@@ -1306,19 +1420,35 @@ header {
     </div>
 
     <div class="settings-actions">
-      <button class="btn-primary" id="ct-submit" onclick="previewTickets()">Preview Tickets</button>
+      <button class="btn-primary" id="ct-submit" onclick="previewTickets()">Queue Previews</button>
       <div class="btn-spinner" id="ct-spinner">
         <div class="spinner"></div>
-        <span id="ct-spinner-label">Running Codex…</span>
-        <button class="btn-ghost" id="ct-cancel" onclick="cancelPreviewRun()" style="margin-left:6px">Cancel</button>
+        <span id="ct-spinner-label">Queueing previews…</span>
       </div>
-    </div>
-    <div class="ct-log-panel" id="ct-log-panel">
-      <div class="ct-log-inner" id="ct-log-inner"></div>
     </div>
   </div>
 
-  <div class="cr-list" id="ct-results"></div>
+  <div class="preview-board">
+    <div class="card preview-list-card">
+      <div class="card-head">
+        <div class="card-label">Preview Jobs</div>
+        <button class="btn-ghost" onclick="loadPreviewJobs()" id="ct-refresh-jobs">Refresh</button>
+      </div>
+      <div class="preview-jobs-list" id="ct-jobs"></div>
+    </div>
+    <div class="card preview-detail-card">
+      <div class="card-head">
+        <div class="card-label" id="ct-detail-head">Select a preview job</div>
+      </div>
+      <div class="preview-detail-body" id="ct-job-detail">
+        <div class="preview-empty-state">No preview selected yet.</div>
+      </div>
+      <div class="ct-log-panel" id="ct-log-panel">
+        <div class="ct-log-head">Codex Output</div>
+        <div class="ct-log-inner" id="ct-log-inner"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1390,6 +1520,17 @@ function fmtTime(ts) {
 async function api(path) {
   try { const r = await fetch(path); return r.ok ? r.json() : null; }
   catch { return null; }
+}
+
+async function sendNotification(title, body) {
+  if (document.hasFocus()) return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'denied') return;
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission !== 'granted') return;
+  new Notification(title, { body });
 }
 
 // ── NAV ────────────────────────────────────────────────────────
@@ -1739,6 +1880,26 @@ function connectSSE() {
     } catch {}
   });
 
+  es.addEventListener('preview_job_update', e => {
+    try {
+      const msg = JSON.parse(e.data);
+      const job = msg.job;
+      if (!job || !job.id) return;
+      const prevStatus = previewJobs[job.id]?.status;
+      mergePreviewJobs([job]);
+      renderPreviewJobs();
+      if (job.id === activePreviewJobId) {
+        previewJobDetail = previewJobs[job.id];
+        renderPreviewDetail();
+      }
+      if (job.status === 'done' && prevStatus && prevStatus !== 'done') {
+        sendNotification('Preview ready', job.summary || job.project_key || job.id);
+      } else if (job.status === 'failed' && prevStatus && prevStatus !== 'failed') {
+        sendNotification('Preview failed', job.summary || job.project_key || job.id);
+      }
+    } catch {}
+  });
+
   es.onerror = () => {
     dot.className = 'conn-dot error';
     lbl.textContent = 'Reconnecting';
@@ -1859,6 +2020,13 @@ function ins(id, text) {
 
 // ── CREATE TICKET ──────────────────────────────────────────────
 let ctNextId = 0;
+let previewJobs = {};
+let previewJobOrder = [];
+let previewJobResults = {};
+let activePreviewJobId = null;
+let previewJobDetail = null;
+let previewLogTimer = null;
+let previewLogSinceId = 0;
 
 async function loadCreatePage() {
   if (document.getElementById('ct-list').children.length === 0) addTicketInput();
@@ -1867,6 +2035,7 @@ async function loadCreatePage() {
     const el = document.getElementById('ct-project');
     if (!el.value) el.value = data.settings.create_ticket_project_key;
   }
+  await loadPreviewJobs();
 }
 
 function addTicketInput() {
@@ -1910,9 +2079,8 @@ function renumberTickets() {
     const removeBtn = item.querySelector('.ct-item-remove');
     if (removeBtn) removeBtn.style.display = single ? 'none' : '';
   });
-  // Update submit button label
   const btn = document.getElementById('ct-submit');
-  if (btn) btn.textContent = single ? 'Preview Ticket' : `Preview ${items.length} Tickets`;
+  if (btn) btn.textContent = single ? 'Queue Preview' : `Queue ${items.length} Previews`;
 }
 
 function renderTicketResult(r, index, total) {
@@ -1935,44 +2103,225 @@ function renderTicketResult(r, index, total) {
         `</div>` +
       `</div>` +
     `</div>`;
-  } else {
-    return `<div class="cr-card error">` +
-      `<div class="cr-head error">` +
-        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
-        `${label} failed` +
-      `</div>` +
-      `<div class="cr-body"><div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div></div>` +
-    `</div>`;
+  }
+  return `<div class="cr-card error">` +
+    `<div class="cr-head error">` +
+      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
+      `${label} failed` +
+    `</div>` +
+    `<div class="cr-body"><div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div></div>` +
+  `</div>`;
+}
+
+function mergePreviewJobs(jobs) {
+  if (!Array.isArray(jobs)) return;
+  let changed = false;
+  for (const job of jobs) {
+    if (!job || !job.id) continue;
+    const existing = previewJobs[job.id] || {};
+    previewJobs[job.id] = { ...existing, ...job };
+    if (!previewJobOrder.includes(job.id)) {
+      previewJobOrder.push(job.id);
+    }
+    changed = true;
+  }
+  if (changed) {
+    previewJobOrder.sort((a, b) => (timeMs(previewJobs[b]?.created_at) || 0) - (timeMs(previewJobs[a]?.created_at) || 0));
   }
 }
 
-let ctPreviews = null;      // null = no preview in progress; array = preview results
-let ctDescriptions = null; // parallel array of {text, enrich_with_code} inputs
-let ctAbortController = null;
-let ctLogTimer = null;
-let ctLogSinceId = 0;
-
-function startPreviewLogPoll() {
-  ctLogSinceId = 0;
-  const inner = document.getElementById('ct-log-inner');
-  inner.innerHTML = '';
-  document.getElementById('ct-log-panel').classList.add('show');
-  ctLogTimer = setInterval(async () => {
-    const data = await api(`/api/logs/__preview__?since_id=${ctLogSinceId}`);
-    if (!data?.logs?.length) return;
-    ctLogSinceId = data.logs[data.logs.length - 1].id;
-    for (const l of data.logs) {
-      const row = document.createElement('div');
-      row.className = 'log-row' + (l.stream === 'stderr' ? ' err' : '');
-      row.innerHTML = `<span class="log-txt">${esc(l.line)}</span>`;
-      inner.appendChild(row);
+async function loadPreviewJobs() {
+  const data = await api('/api/preview-jobs?limit=200');
+  if (data?.jobs) {
+    mergePreviewJobs(data.jobs);
+    renderPreviewJobs();
+    if (activePreviewJobId && previewJobs[activePreviewJobId]) {
+      previewJobDetail = previewJobs[activePreviewJobId];
+      renderPreviewDetail();
     }
-    inner.scrollTop = inner.scrollHeight;
-  }, 1000);
+  }
 }
 
-function stopPreviewLogPoll() {
-  if (ctLogTimer) { clearInterval(ctLogTimer); ctLogTimer = null; }
+function renderPreviewJobs() {
+  const listEl = document.getElementById('ct-jobs');
+  if (!listEl) return;
+  if (!previewJobOrder.length) {
+    listEl.innerHTML = '<div class="preview-empty-list">No preview jobs yet.</div>';
+    return;
+  }
+  listEl.innerHTML = previewJobOrder
+    .map(id => renderPreviewJobRow(previewJobs[id]))
+    .join('');
+}
+
+function renderPreviewJobRow(job) {
+  if (!job) return '';
+  const status = job.status || 'queued';
+  const summary = job.summary || previewSnippet(job);
+  const isActive = job.id === activePreviewJobId;
+  return `<div class="preview-job ${isActive ? 'active' : ''}" onclick="selectPreviewJob('${escAttr(job.id)}')">` +
+    `<div class="preview-job-top" style="display:flex;align-items:center;gap:8px;">` +
+      `<div class="preview-job-title">${esc(summary)}</div>` +
+      `<span class="preview-status ${esc(status)}">${esc(status)}</span>` +
+    `</div>` +
+    `<div class="preview-job-meta">` +
+      `<span>${esc(job.project_key || '')}</span>` +
+      `<span>${relTime(job.created_at)}</span>` +
+    `</div>` +
+  `</div>`;
+}
+
+function previewSnippet(job) {
+  const text = job?.description || '';
+  if (!text) return job.id;
+  return text.length > 120 ? `${text.slice(0, 117)}…` : text;
+}
+
+function selectPreviewJob(jobId) {
+  if (!jobId) return;
+  activePreviewJobId = jobId;
+  previewJobDetail = previewJobs[jobId] || null;
+  if (!previewJobResults[jobId]) previewJobResults[jobId] = '';
+  renderPreviewJobs();
+  ensurePreviewJobDetail(jobId);
+}
+
+async function ensurePreviewJobDetail(jobId) {
+  let job = previewJobs[jobId];
+  if (!job) {
+    previewJobDetail = null;
+    renderPreviewDetail();
+    return;
+  }
+  if (!job.preview && ["done", "created"].includes(job.status)) {
+    const data = await api(`/api/preview-jobs/${jobId}`);
+    if (data?.job) {
+      mergePreviewJobs([data.job]);
+      job = previewJobs[jobId];
+    }
+  }
+  previewJobDetail = job;
+  renderPreviewDetail();
+}
+
+function renderPreviewDetail() {
+  const container = document.getElementById('ct-job-detail');
+  const head = document.getElementById('ct-detail-head');
+  if (!container || !head) return;
+  if (!previewJobDetail) {
+    head.textContent = 'Select a preview job';
+    container.innerHTML = '<div class="preview-empty-state">No preview selected yet.</div>';
+    stopPreviewLogPoll(true);
+    return;
+  }
+
+  const job = previewJobDetail;
+  const status = job.status || 'queued';
+  head.textContent = job.summary || previewSnippet(job);
+
+  let html = `<div class="preview-meta">Project ${esc(job.project_key || '')} • ${relTime(job.created_at)}</div>`;
+
+  if (status === 'queued') {
+    html += `<div class="preview-state">Waiting for Codex to pick up this request.</div>` +
+      `<div class="preview-actions"><button class="btn-ghost" onclick="cancelPreviewJob('${escAttr(job.id)}')">Cancel</button></div>`;
+    stopPreviewLogPoll(true);
+  } else if (status === 'processing') {
+    html += `<div class="preview-state">Codex is generating this preview…</div>` +
+      `<div class="preview-actions"><button class="btn-ghost" onclick="cancelPreviewJob('${escAttr(job.id)}')">Cancel Run</button></div>`;
+    startPreviewLogPoll(job.id, true);
+  } else if (status === 'failed') {
+    html += `<div class="preview-error">${esc(job.error || 'Preview failed')}</div>` +
+      `<div class="preview-actions">` +
+        `<button class="btn-primary" onclick="retryPreviewJob('${escAttr(job.id)}')">Retry</button>` +
+      `</div>`;
+    startPreviewLogPoll(job.id, false);
+  } else if (status === 'cancelled') {
+    html += `<div class="preview-state">This preview was cancelled.</div>` +
+      `<div class="preview-actions">` +
+        `<button class="btn-primary" onclick="retryPreviewJob('${escAttr(job.id)}')">Run Again</button>` +
+      `</div>`;
+    stopPreviewLogPoll(true);
+  } else if (job.preview) {
+    const comps = (job.preview.components || []).join(', ');
+    const jobIdSafe = job.id.replace(/[^a-zA-Z0-9_-]/g, '');
+    html +=
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Summary</div>` +
+        `<input class="cr-preview-input" id="ct-prev-summary-${jobIdSafe}" type="text" value="${escAttr(job.preview.summary || '')}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Issue Type</div>` +
+        `<input class="cr-preview-input" id="ct-prev-type-${jobIdSafe}" type="text" value="${escAttr(job.preview.issue_type || '')}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Components <em style="font-weight:400;text-transform:none;letter-spacing:0;font-style:normal">(comma-separated)</em></div>` +
+        `<input class="cr-preview-input" id="ct-prev-comps-${jobIdSafe}" type="text" value="${escAttr(comps)}">` +
+      `</div>` +
+      `<div class="cr-preview-field">` +
+        `<div class="cr-preview-label">Description</div>` +
+        `<textarea class="cr-preview-input cr-preview-ta" id="ct-prev-desc-${jobIdSafe}">${esc(job.preview.description || '')}</textarea>` +
+      `</div>` +
+      `<div class="preview-actions">` +
+        `<button class="btn-primary" id="ct-create-btn-${jobIdSafe}" onclick="createTicketFromPreview('${escAttr(job.id)}')" ${job.status === 'created' ? 'disabled' : ''}>` +
+          (job.status === 'created' ? 'Ticket Created' : 'Create Ticket') +
+        `</button>` +
+        `<button class="btn-ghost" onclick="retryPreviewJob('${escAttr(job.id)}')">Re-run Preview</button>` +
+      `</div>`;
+    if (job.created_issue_key) {
+      html += `<div class="preview-created">Ticket created: <a href="${esc(job.created_issue_url || '')}" target="_blank">${esc(job.created_issue_key)}</a></div>`;
+    }
+    startPreviewLogPoll(job.id, status === 'processing');
+  } else {
+    html += `<div class="preview-state">Preview data is not available.</div>`;
+    stopPreviewLogPoll(true);
+  }
+
+  html += `<div class="cr-list" id="ct-result-${escAttr(job.id)}">${previewJobResults[job.id] || ''}</div>`;
+
+  container.innerHTML = html;
+}
+
+function stopPreviewLogPoll(hidePanel = false) {
+  if (previewLogTimer) {
+    clearInterval(previewLogTimer);
+    previewLogTimer = null;
+  }
+  if (hidePanel) {
+    const panel = document.getElementById('ct-log-panel');
+    if (panel) panel.classList.remove('show');
+    const inner = document.getElementById('ct-log-inner');
+    if (inner) inner.innerHTML = '';
+  }
+}
+
+function startPreviewLogPoll(jobId, continuous) {
+  const panel = document.getElementById('ct-log-panel');
+  if (!panel) return;
+  stopPreviewLogPoll();
+  previewLogSinceId = 0;
+  const inner = document.getElementById('ct-log-inner');
+  if (inner) inner.innerHTML = '';
+  panel.classList.add('show');
+  pollPreviewLogs(jobId);
+  if (continuous) {
+    previewLogTimer = setInterval(() => pollPreviewLogs(jobId), 1500);
+  }
+}
+
+async function pollPreviewLogs(jobId) {
+  if (!jobId || jobId !== activePreviewJobId) return;
+  const data = await api(`/api/preview-logs/${jobId}?since_id=${previewLogSinceId}`);
+  if (!data?.logs?.length) return;
+  previewLogSinceId = data.logs[data.logs.length - 1].id;
+  const inner = document.getElementById('ct-log-inner');
+  if (!inner) return;
+  for (const l of data.logs) {
+    const row = document.createElement('div');
+    row.className = 'log-row' + (l.stream === 'stderr' ? ' err' : '');
+    row.innerHTML = `<span class="log-txt">${esc(l.line)}</span>`;
+    inner.appendChild(row);
+  }
+  inner.scrollTop = inner.scrollHeight;
 }
 
 async function previewTickets() {
@@ -1993,226 +2342,104 @@ async function previewTickets() {
   const submitBtn = document.getElementById('ct-submit');
   const spinner = document.getElementById('ct-spinner');
   const spinnerLabel = document.getElementById('ct-spinner-label');
-  const resultsEl = document.getElementById('ct-results');
-
-  resultsEl.innerHTML = '';
   submitBtn.style.display = 'none';
   spinnerLabel.textContent = descriptions.length === 1
-    ? 'Running Codex…'
-    : `Running Codex for ${descriptions.length} tickets…`;
+    ? 'Queueing preview…'
+    : `Queueing ${descriptions.length} previews…`;
   spinner.classList.add('show');
-  startPreviewLogPoll();
-
-  ctAbortController = new AbortController();
 
   try {
     const resp = await fetch('/api/preview-ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_key: projectKey, descriptions }),
-      signal: ctAbortController.signal,
     });
     const data = await resp.json();
-    const results = data.results || [];
-    ctPreviews = results;
-    ctDescriptions = descriptions;
-
-    const total = results.length;
-    let html = results.map((r, i) => `<div id="ct-preview-${i}">${renderPreviewCard(r, i, total)}</div>`).join('');
-    html += `<div id="ct-confirm-bar">${renderConfirmBar()}</div>`;
-    resultsEl.innerHTML = html;
-    notifyTicketsReady(total);
+    if (!resp.ok || data.error || data.ok === false) throw new Error(data.error || resp.statusText);
+    const jobs = data.jobs || [];
+    mergePreviewJobs(jobs);
+    renderPreviewJobs();
+    if (jobs.length) selectPreviewJob(jobs[0].id);
   } catch (err) {
-    if (err.name === 'AbortError') {
-      resultsEl.innerHTML = '';
-    } else {
-      resultsEl.innerHTML =
-        `<div class="cr-card error">` +
-          `<div class="cr-head error">Request failed</div>` +
-          `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
-        `</div>`;
-    }
-    submitBtn.style.display = '';
+    alert(`Preview request failed: ${err.message || err}`);
   } finally {
-    ctAbortController = null;
-    stopPreviewLogPoll();
     spinner.classList.remove('show');
+    submitBtn.style.display = '';
+    renumberTickets();
   }
 }
 
-async function cancelPreviewRun() {
-  stopPreviewLogPoll();
-  if (ctAbortController) ctAbortController.abort();
-  await fetch('/api/cancel-preview', { method: 'POST' }).catch(() => {});
+async function cancelPreviewJob(jobId) {
+  await fetch('/api/cancel-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId }),
+  });
+  await loadPreviewJobs();
 }
 
-async function sendNotification(title, body) {
-  if (document.hasFocus()) return;
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'denied') return;
-  if (Notification.permission === 'default') {
-    await Notification.requestPermission();
+async function retryPreviewJob(jobId) {
+  const job = previewJobs[jobId];
+  if (!job) return;
+  const payload = {
+    project_key: job.project_key,
+    descriptions: [{
+      text: job.description || '',
+      enrich_with_code: job.enrich_with_code,
+      code_context_repos: job.code_context_repos || '',
+    }],
+  };
+  const resp = await fetch('/api/preview-ticket', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (resp.ok && data?.jobs?.length) {
+    mergePreviewJobs(data.jobs);
+    renderPreviewJobs();
+    selectPreviewJob(data.jobs[0].id);
   }
-  if (Notification.permission !== 'granted') return;
-  new Notification(title, { body });
 }
 
-async function notifyTicketsReady(count) {
-  const body = count === 1 ? '1 ticket is ready to review' : `${count} tickets are ready to review`;
-  sendNotification('Ticket Creation', body);
-}
-
-window.addEventListener('beforeunload', () => {
-  if (ctAbortController) {
-    navigator.sendBeacon('/api/cancel-preview');
+async function createTicketFromPreview(jobId) {
+  const job = previewJobs[jobId];
+  if (!job || !job.preview) return;
+  const jobIdSafe = job.id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const ticket = {
+    summary: document.getElementById(`ct-prev-summary-${jobIdSafe}`)?.value.trim() || '',
+    issue_type: document.getElementById(`ct-prev-type-${jobIdSafe}`)?.value.trim() || 'Story',
+    components: (document.getElementById(`ct-prev-comps-${jobIdSafe}`)?.value || '')
+      .split(',').map(s => s.trim()).filter(Boolean),
+    description: document.getElementById(`ct-prev-desc-${jobIdSafe}`)?.value.trim() || '',
+    preview_job_id: jobId,
+  };
+  const button = document.getElementById(`ct-create-btn-${jobIdSafe}`);
+  if (button) {
+    button.textContent = 'Creating…';
+    button.disabled = true;
   }
-});
-
-function renderPreviewCard(r, index, total) {
-  const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
-  if (!r.ok) {
-    return `<div class="cr-card error">` +
-      `<div class="cr-head error">` +
-        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>` +
-        `${label} — enhancement failed` +
-      `</div>` +
-      `<div class="cr-body">` +
-        `<div class="cr-err-msg">${esc(r.error || 'Unknown error')}</div>` +
-        `<button class="btn-ghost" style="margin-top:10px" onclick="retryTicketPreview(${index})">Retry</button>` +
-      `</div>` +
-    `</div>`;
-  }
-  const p = r.preview;
-  return `<div class="cr-card preview">` +
-    `<div class="cr-head preview">` +
-      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>` +
-      `${label} — review &amp; edit` +
-    `</div>` +
-    `<div class="cr-body">` +
-      `<div class="cr-preview-field">` +
-        `<div class="cr-preview-label">Summary</div>` +
-        `<input class="cr-preview-input" id="ct-prev-summary-${index}" type="text" value="${escAttr(p.summary)}">` +
-      `</div>` +
-      `<div class="cr-preview-field">` +
-        `<div class="cr-preview-label">Issue Type</div>` +
-        `<input class="cr-preview-input" id="ct-prev-type-${index}" type="text" value="${escAttr(p.issue_type || '')}">` +
-      `</div>` +
-      `<div class="cr-preview-field">` +
-        `<div class="cr-preview-label">Components <em style="font-weight:400;text-transform:none;letter-spacing:0;font-style:normal">(comma-separated)</em></div>` +
-        `<input class="cr-preview-input" id="ct-prev-comps-${index}" type="text" value="${escAttr((p.components || []).join(', '))}">` +
-      `</div>` +
-      `<div class="cr-preview-field">` +
-        `<div class="cr-preview-label">Description</div>` +
-        `<textarea class="cr-preview-input cr-preview-ta" id="ct-prev-desc-${index}">${esc(p.description || '')}</textarea>` +
-      `</div>` +
-    `</div>` +
-  `</div>`;
-}
-
-function renderConfirmBar() {
-  if (!ctPreviews) return '';
-  const okCount = ctPreviews.filter(r => r.ok).length;
-  if (!okCount) return '';
-  const label = okCount === 1 ? 'Create Ticket' : `Create ${okCount} Tickets`;
-  return `<div class="ct-confirm-bar">` +
-    `<button class="btn-primary" onclick="confirmCreateTickets()">${label}</button>` +
-    `<button class="btn-ghost" onclick="cancelPreview()">Edit descriptions</button>` +
-  `</div>`;
-}
-
-function cancelPreview() {
-  ctPreviews = null;
-  ctDescriptions = null;
-  document.getElementById('ct-results').innerHTML = '';
-  document.getElementById('ct-submit').style.display = '';
-  document.getElementById('ct-log-panel').classList.remove('show');
-}
-
-async function retryTicketPreview(index) {
-  if (!ctDescriptions || !ctDescriptions[index]) return;
-  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
-  const total = ctPreviews.length;
-
-  const cardEl = document.getElementById(`ct-preview-${index}`);
-  if (cardEl) {
-    const label = total === 1 ? 'Ticket' : `Ticket ${index + 1}`;
-    cardEl.innerHTML =
-      `<div class="cr-card">` +
-        `<div class="cr-head" style="color:var(--text-3)">` +
-          `<div class="spinner" style="width:11px;height:11px;border-width:2px;margin-right:6px"></div>` +
-          `${label} — retrying…` +
-        `</div>` +
-      `</div>`;
-  }
-
-  try {
-    const resp = await fetch('/api/preview-ticket', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project_key: projectKey, descriptions: [ctDescriptions[index]] }),
-    });
-    const data = await resp.json();
-    const result = (data.results || [])[0] || { ok: false, error: 'No result returned' };
-    ctPreviews[index] = result;
-  } catch (err) {
-    ctPreviews[index] = { ok: false, error: String(err) };
-  }
-
-  if (cardEl) cardEl.innerHTML = renderPreviewCard(ctPreviews[index], index, total);
-  const barEl = document.getElementById('ct-confirm-bar');
-  if (barEl) barEl.innerHTML = renderConfirmBar();
-}
-
-async function confirmCreateTickets() {
-  const projectKey = document.getElementById('ct-project').value.trim().toUpperCase();
-  const resultsEl = document.getElementById('ct-results');
-  const spinner = document.getElementById('ct-spinner');
-  const spinnerLabel = document.getElementById('ct-spinner-label');
-
-  if (!ctPreviews) return;
-
-  const tickets = ctPreviews.map((r, i) => {
-    if (!r.ok) return null;
-    return {
-      summary: document.getElementById(`ct-prev-summary-${i}`)?.value.trim() || '',
-      issue_type: document.getElementById(`ct-prev-type-${i}`)?.value.trim() || 'Story',
-      components: (document.getElementById(`ct-prev-comps-${i}`)?.value || '')
-        .split(',').map(s => s.trim()).filter(Boolean),
-      description: document.getElementById(`ct-prev-desc-${i}`)?.value.trim() || '',
-    };
-  }).filter(Boolean);
-
-  if (!tickets.length) return;
-
-  spinnerLabel.textContent = tickets.length === 1 ? 'Creating ticket…' : `Creating ${tickets.length} tickets…`;
-  spinner.classList.add('show');
-  resultsEl.innerHTML = '';
-
   try {
     const resp = await fetch('/api/create-ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project_key: projectKey, tickets }),
+      body: JSON.stringify({ project_key: job.project_key, tickets: [ticket] }),
     });
     const data = await resp.json();
-    const results = data.results || [];
-    ctPreviews = null;
-    ctDescriptions = null;
-    resultsEl.innerHTML = results.map((r, i) => renderTicketResult(r, i, results.length)).join('');
-    const items = Array.from(document.querySelectorAll('#ct-list .ct-item'));
-    results.forEach((r, i) => {
-      if (r.ok && items[i]) items[i].querySelector('textarea').value = '';
-    });
+    const result = (data.results || [])[0];
+    if (result) {
+      previewJobResults[jobId] = renderTicketResult(result, 0, 1);
+      if (result.ok) {
+        mergePreviewJobs([{ ...previewJobs[jobId], status: 'created', created_issue_key: result.result.issue_key, created_issue_url: result.result.issue_url }]);
+        previewJobDetail = previewJobs[jobId];
+        renderPreviewJobs();
+      }
+    }
   } catch (err) {
-    resultsEl.innerHTML =
-      `<div class="cr-card error">` +
-        `<div class="cr-head error">Request failed</div>` +
-        `<div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div>` +
-      `</div>`;
+    previewJobResults[jobId] =
+      `<div class="cr-card error"><div class="cr-head error">Request failed</div><div class="cr-body"><div class="cr-err-msg">${esc(String(err))}</div></div></div>`;
   } finally {
-    spinner.classList.remove('show');
-    document.getElementById('ct-submit').style.display = '';
-    renumberTickets();
+    renderPreviewDetail();
   }
 }
 
