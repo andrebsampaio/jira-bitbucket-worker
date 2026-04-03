@@ -1,0 +1,16 @@
+{
+  "name": "Worker Dashboard",
+  "short_name": "Worker",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0f1d",
+  "theme_color": "#0a0f1d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

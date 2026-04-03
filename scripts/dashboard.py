@@ -36,6 +36,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         "/dashboard/settings": _serve_html,
         "/favicon.svg": _serve_favicon,
         "/favicon.ico": _serve_favicon,
+        "/site.webmanifest": _serve_manifest,
         "/api/status": _api_status,
         "/api/queue": _api_queue,
         "/api/tickets": _api_tickets,
@@ -101,6 +102,22 @@ def _serve_favicon(handler):
         content = f.read()
     handler.send_response(200)
     handler.send_header("Content-Type", "image/svg+xml")
+    handler.send_header("Cache-Control", "public, max-age=86400")
+    handler.send_header("Content-Length", str(len(content)))
+    handler.end_headers()
+    handler.wfile.write(content)
+
+
+def _serve_manifest(handler):
+    manifest_path = os.path.join(STATIC_DIR, "site.webmanifest")
+    if not os.path.exists(manifest_path):
+        handler.send_response(404)
+        handler.end_headers()
+        return
+    with open(manifest_path, "rb") as f:
+        content = f.read()
+    handler.send_response(200)
+    handler.send_header("Content-Type", "application/manifest+json")
     handler.send_header("Cache-Control", "public, max-age=86400")
     handler.send_header("Content-Length", str(len(content)))
     handler.end_headers()
