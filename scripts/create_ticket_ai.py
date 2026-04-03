@@ -461,7 +461,7 @@ def _enhance_with_codex(
         cmd += ["-m", model]
     effort = db.get_setting("create_ticket_effort", "") or db.get_setting("effort", "")
     if effort and effort != "none":
-        cmd += ["-c", f"reasoning_effort={effort}"]
+        cmd += ["-c", f"model_reasoning_effort={effort}"]
     cmd.append(prompt)
 
     # Remove stale output files before running
