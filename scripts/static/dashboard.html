@@ -1714,7 +1714,8 @@ function stopLogPoll() { if (logTimer) { clearInterval(logTimer); logTimer = nul
 
 async function pollLogs() {
   if (!currentKey) return;
-  const data = await api(`/api/logs/${currentKey}?since_id=${logSinceId}`);
+  const encodedKey = encodeURIComponent(currentKey);
+  const data = await api(`/api/logs/${encodedKey}?since_id=${logSinceId}`);
   if (!data?.logs?.length) return;
   logSinceId = data.logs[data.logs.length - 1].id;
   logLines.push(...data.logs);
@@ -1833,7 +1834,7 @@ async function toggleLog(key) {
   } else {
     expandedKey = key;
     if (!cachedLogs[key]) {
-      const data = await api(`/api/logs/${key}`);
+      const data = await api(`/api/logs/${encodeURIComponent(key)}`);
       cachedLogs[key] = data?.logs || [];
     }
   }
