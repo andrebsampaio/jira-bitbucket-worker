@@ -85,6 +85,7 @@ def _serve_html(handler):
         content = f.read()
     handler.send_response(200)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("Link", '</favicon.svg>; rel="icon"; type="image/svg+xml"; sizes="any"')
     handler.send_header("Content-Length", str(len(content)))
     handler.end_headers()
     handler.wfile.write(content)
