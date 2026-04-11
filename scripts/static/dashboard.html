@@ -1947,7 +1947,7 @@ async function toggleLog(key) {
 function renderPRs(prs) {
   if (!prs) return;
   prMap = {};
-  prs.forEach(p => { prMap[p.issue_key] = p; });
+  prs.forEach(p => { if (!prMap[p.issue_key]) prMap[p.issue_key] = p; });
   const el = document.getElementById('prs-panel');
   if (!prs.length) { el.innerHTML = '<div class="empty">No pull requests yet</div>'; return; }
   el.innerHTML = prs.map(p =>
