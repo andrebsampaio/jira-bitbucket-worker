@@ -24,6 +24,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
             "/api/cancel-preview": _api_cancel_preview,
             "/api/preview-ticket": _api_preview_ticket,
             "/api/create-ticket": _api_create_ticket,
+            "/api/rerun-ticket": _api_rerun_ticket,
         }
         route_fn = post_routes.get(path)
         if route_fn:
@@ -282,6 +283,32 @@ def _api_settings_save(handler):
     for key, value in settings.items():
         db.set_setting(key, value)
     _send_json(handler, {"ok": True})
+
+
+def _api_rerun_ticket(handler):
+    import sys
+    content_length = int(handler.headers.get("Content-Length", 0))
+    body = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        handler.send_response(400)
+        handler.end_headers()
+        return
+    issue_key = (payload.get("issue_key") or "").strip()
+    if not issue_key:
+        handler.send_response(400)
+        handler.send_header("Content-Type", "application/json")
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": "issue_key is required"}).encode())
+        return
+    main_mod = sys.modules.get("__main__")
+    requeue_fn = getattr(main_mod, "requeue_ticket", None)
+    if requeue_fn is None:
+        _send_json(handler, {"ok": False, "error": "Requeue not available"})
+        return
+    requeue_fn(issue_key)
+    _send_json(handler, {"ok": True, "issue_key": issue_key})
 
 
 def _api_cancel_preview(handler):

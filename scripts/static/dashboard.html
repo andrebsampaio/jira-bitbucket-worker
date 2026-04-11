@@ -379,6 +379,21 @@ header {
 .btn-cancel:hover  { background: rgba(248,113,113,.18); }
 .btn-cancel:active { opacity: .7; }
 
+.btn-rerun {
+  padding: 2px 7px;
+  border-radius: var(--r);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap;
+}
+.btn-rerun:hover  { color: var(--blue); border-color: var(--blue); background: rgba(96,165,250,.08); }
+.btn-rerun:active { opacity: .7; }
+
 /* Terminal — bounded height so long logs scroll inside instead of stretching the page */
 #job-running {
   min-height: 0;
@@ -1914,7 +1929,10 @@ function renderTickets(tickets) {
       </div>
       <div class="t-dur" data-label="Duration">${fmtDur(dur)}</div>
       <div class="t-when" data-label="Updated">${relTime(t.finished_at || t.started_at || t.queued_at)}</div>
-      <div class="t-pr" data-label="PR">${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}</div>
+      <div class="t-pr" data-label="PR">
+        ${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}
+        ${'done failed cancelled'.includes(t.status) ? `<button class="btn-rerun" title="Re-run this ticket" onclick="event.stopPropagation();rerunTicket('${escAttr(t.issue_key)}')">Re-run</button>` : ''}
+      </div>
     </div>` + (open ? renderInlineLog(t.issue_key) : '');
   }).join('');
 }
@@ -2000,6 +2018,19 @@ async function cancelJob() {
   btn.disabled = true;
   try { await fetch('/api/cancel', { method: 'POST' }); } catch {}
   setTimeout(refresh, 1200);
+}
+
+async function rerunTicket(issueKey) {
+  const btn = document.querySelector(`.btn-rerun[onclick*="${CSS.escape(issueKey)}"]`);
+  if (btn) { btn.textContent = 'Queuing\u2026'; btn.disabled = true; }
+  try {
+    await fetch('/api/rerun-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issue_key: issueKey }),
+    });
+  } catch {}
+  refresh();
 }
 
 // ── FULL REFRESH ───────────────────────────────────────────────

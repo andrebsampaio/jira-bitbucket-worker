@@ -45,6 +45,13 @@ _current_issue_key: str | None = None
 _proc_lock = threading.Lock()
 
 
+def requeue_ticket(issue_key: str) -> bool:
+    """Re-queue a finished ticket for reprocessing. Returns True if queued."""
+    db.ticket_queued(issue_key)
+    ticket_queue.put(("ticket", issue_key))
+    return True
+
+
 def cancel_current_job() -> str | None:
     """Kill the current process_ticket subprocess and all its children. Returns the issue key or None."""
     with _proc_lock:
