@@ -387,6 +387,7 @@ def _api_create_ticket(handler):
                 description=ticket.get("description", "").strip(),
                 issue_type=ticket.get("issue_type", "Story").strip(),
                 components=[c for c in ticket.get("components", []) if c],
+                assign_to_bot=bool(ticket.get("assign_to_bot", False)),
             )
             db.log_event(result["issue_key"], "created", f"Ticket created via dashboard: {result['summary']}")
             if preview_job_id:

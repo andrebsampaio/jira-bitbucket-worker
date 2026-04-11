@@ -311,6 +311,7 @@ def create_jira_ticket(
     description_text: str,
     issue_type: str,
     component_names: list[str],
+    assign_to_bot: bool = False,
 ) -> str:
     """Create a JIRA ticket and return its key."""
     body: dict = {
@@ -323,6 +324,10 @@ def create_jira_ticket(
     }
     if component_names:
         body["fields"]["components"] = [{"name": n} for n in component_names]
+    if assign_to_bot:
+        trigger_assignee = os.environ.get("TRIGGER_ASSIGNEE", "").strip()
+        if trigger_assignee:
+            body["fields"]["assignee"] = {"accountId": trigger_assignee}
 
     resp = requests.post(
         f"{JIRA_URL}/rest/api/3/issue",
@@ -571,6 +576,7 @@ def create_ticket_from_enhanced(
     description: str,
     issue_type: str,
     components: list[str],
+    assign_to_bot: bool = False,
 ) -> dict:
     """
     Step 2 of the two-step flow: create the JIRA ticket from pre-enhanced
@@ -582,6 +588,7 @@ def create_ticket_from_enhanced(
         description_text=description,
         issue_type=issue_type,
         component_names=components,
+        assign_to_bot=assign_to_bot,
     )
 
     sprint_id = get_active_sprint_id(project_key)

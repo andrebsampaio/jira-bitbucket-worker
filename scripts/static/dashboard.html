@@ -2532,6 +2532,12 @@ function renderPreviewDetail() {
         `<div class="cr-preview-label">Description</div>` +
         `<textarea class="cr-preview-input cr-preview-ta" id="ct-prev-desc-${jobIdSafe}">${esc(job.preview.description || '')}</textarea>` +
       `</div>` +
+      `<div class="cr-preview-field">` +
+        `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">` +
+          `<input type="checkbox" id="ct-prev-assign-bot-${jobIdSafe}">` +
+          `<span class="cr-preview-label" style="margin:0">Assign to bot</span>` +
+        `</label>` +
+      `</div>` +
       `<div class="preview-actions">` +
         `<button class="btn-primary" id="ct-create-btn-${jobIdSafe}" onclick="createTicketFromPreview('${escAttr(job.id)}')" ${job.status === 'created' ? 'disabled' : ''}>` +
           (job.status === 'created' ? 'Ticket Created' : 'Create Ticket') +
@@ -2683,6 +2689,7 @@ async function createTicketFromPreview(jobId) {
     components: (document.getElementById(`ct-prev-comps-${jobIdSafe}`)?.value || '')
       .split(',').map(s => s.trim()).filter(Boolean),
     description: document.getElementById(`ct-prev-desc-${jobIdSafe}`)?.value.trim() || '',
+    assign_to_bot: document.getElementById(`ct-prev-assign-bot-${jobIdSafe}`)?.checked || false,
     preview_job_id: jobId,
   };
   const button = document.getElementById(`ct-create-btn-${jobIdSafe}`);
