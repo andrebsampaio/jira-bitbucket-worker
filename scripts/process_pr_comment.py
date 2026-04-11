@@ -70,6 +70,68 @@ def fetch_comment(workspace: str, repo_slug: str, pr_id: str, comment_id: str) -
     return response.json()
 
 
+def fetch_pr_comments(workspace: str, repo_slug: str, pr_id: str) -> list[dict]:
+    """Fetch all comments for a PR, handling pagination."""
+    url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
+    comments = []
+    params: dict = {"pagelen": 100}
+    while url:
+        response = requests.get(url, auth=_bb_auth(), params=params)
+        response.raise_for_status()
+        data = response.json()
+        comments.extend(data.get("values", []))
+        url = data.get("next")
+        params = {}
+    return comments
+
+
+def build_comment_thread(comment_data: dict, all_comments: list[dict]) -> list[dict]:
+    """
+    Return the conversation thread leading up to comment_data.
+
+    If comment_data is a reply (has a parent), returns:
+      - the parent comment
+      - all sibling replies posted before this comment (same parent, sorted by created_on)
+
+    If it is a top-level comment, returns an empty list (no prior thread).
+    """
+    parent = comment_data.get("parent")
+    if not parent:
+        return []
+
+    parent_id = parent.get("id")
+    comment_id = comment_data.get("id")
+    comment_created = comment_data.get("created_on", "")
+
+    parent_comment = next((c for c in all_comments if c.get("id") == parent_id), None)
+
+    prior_replies = [
+        c for c in all_comments
+        if c.get("parent", {}).get("id") == parent_id
+        and c.get("id") != comment_id
+        and c.get("created_on", "") <= comment_created
+    ]
+    prior_replies.sort(key=lambda c: c.get("created_on", ""))
+
+    thread: list[dict] = []
+    if parent_comment:
+        thread.append(parent_comment)
+    thread.extend(prior_replies)
+    return thread
+
+
+def format_comment_thread(thread: list[dict]) -> str:
+    """Format a list of comment dicts as a readable conversation string."""
+    if not thread:
+        return ""
+    parts = []
+    for c in thread:
+        author = c.get("user", {}).get("display_name", "Unknown")
+        text = c.get("content", {}).get("raw", "").strip()
+        parts.append(f"{author}: {text}")
+    return "\n\n".join(parts)
+
+
 def reply_to_comment(workspace: str, repo_slug: str, pr_id: str, parent_id: str, body: str):
     url = f"{BITBUCKET_API}/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
     payload = {
@@ -108,8 +170,13 @@ def extract_file_diff(full_diff: str, file_path: str) -> str:
 
 def build_prompt(comment_text: str, file_path: str, line: str,
                  diff: str, pr_title: str, source_branch: str,
-                 repo_slug: str) -> str:
+                 repo_slug: str, conversation: str = "") -> str:
     from scripts.dashboard import SETTINGS_DEFAULTS
+
+    conversation_section = (
+        f"\nPrior conversation in this thread:\n{conversation}\n"
+        if conversation else ""
+    )
 
     template_vars = {
         "comment": comment_text,
@@ -119,6 +186,7 @@ def build_prompt(comment_text: str, file_path: str, line: str,
         "pr_title": pr_title,
         "source_branch": source_branch,
         "repo_slug": repo_slug,
+        "conversation": conversation_section,
     }
 
     template = db.get_setting("prompt_pr_comment", SETTINGS_DEFAULTS["prompt_pr_comment"])
@@ -396,7 +464,7 @@ def post_review_feedback(workspace: str, repo_slug: str, pr_id: str, review: dic
 def process_fix_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: str,
                      issue_key: str, source_branch: str, pr_title: str,
                      comment_text: str, file_path: str, line_number: str,
-                     diff: str) -> None:
+                     diff: str, conversation: str = "") -> None:
     prompt = build_prompt(
         comment_text=comment_text,
         file_path=file_path,
@@ -405,6 +473,7 @@ def process_fix_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: 
         pr_title=pr_title,
         source_branch=source_branch,
         repo_slug=repo_slug,
+        conversation=conversation,
     )
     print(f"[pr-comment] Prompt:\n{'-'*60}\n{prompt}\n{'-'*60}")
 
@@ -536,6 +605,12 @@ def main():
     full_diff = fetch_pr_diff(workspace, repo_slug, pr_id)
     diff = extract_file_diff(full_diff, file_path) if file_path else full_diff
 
+    all_comments = fetch_pr_comments(workspace, repo_slug, pr_id)
+    thread = build_comment_thread(comment_data, all_comments)
+    conversation = format_comment_thread(thread)
+    if conversation:
+        print(f"[pr-comment] Found conversation thread with {len(thread)} prior message(s)")
+
     comment_text = comment_body.replace(BOT_MENTION, "").strip()
     if is_review_request(comment_text):
         process_review_flow(
@@ -561,6 +636,7 @@ def main():
             file_path=file_path,
             line_number=line_number,
             diff=diff,
+            conversation=conversation,
         )
 
     db.ticket_finished(issue_key)
