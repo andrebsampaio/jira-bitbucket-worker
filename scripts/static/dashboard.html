@@ -528,7 +528,7 @@ header {
 
 .t-head {
   display: grid;
-  grid-template-columns: 100px 1fr 80px 70px 80px;
+  grid-template-columns: 100px 1fr 80px 70px 80px 70px;
   padding: 8px 14px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
@@ -538,7 +538,7 @@ header {
 
 .t-row {
   display: grid;
-  grid-template-columns: 100px 1fr 80px 70px 80px;
+  grid-template-columns: 100px 1fr 80px 70px 80px 70px;
   padding: 9px 14px;
   gap: 10px;
   border-bottom: 1px solid var(--border);
@@ -554,7 +554,8 @@ header {
 .t-sum  { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-dur  { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
 .t-when { font-size: 12px; color: var(--text-3); }
-.t-pr   { font-size: 11.5px; }
+.t-pr     { font-size: 11.5px; }
+.t-action { font-size: 11.5px; }
 .t-status { display: flex; align-items: center; gap: 8px; }
 .t-main {
   display: flex;
@@ -1234,7 +1235,7 @@ header {
   .dash-grid { grid-template-columns: 1fr; }
   .col-main  { border-right: none; min-height: auto; }
   .col-side  { border-top: 1px solid var(--border); }
-  .t-head, .t-row { grid-template-columns: 90px 1fr 70px 60px; }
+  .t-head, .t-row { grid-template-columns: 90px 1fr 70px 60px 80px; }
   .t-head :last-child, .t-row :last-child { display: none; }
   .pr-row { grid-template-columns: 90px 1fr 70px; }
   .pr-row :nth-child(4), .pr-row :nth-child(5) { display: none; }
@@ -1510,6 +1511,7 @@ header {
       <div class="th">Duration</div>
       <div class="th">When</div>
       <div class="th">PR</div>
+      <div class="th"></div>
     </div>
     <div id="tickets-body"><div class="empty">No tickets yet</div></div>
   </div>
@@ -1929,10 +1931,8 @@ function renderTickets(tickets) {
       </div>
       <div class="t-dur" data-label="Duration">${fmtDur(dur)}</div>
       <div class="t-when" data-label="Updated">${relTime(t.finished_at || t.started_at || t.queued_at)}</div>
-      <div class="t-pr" data-label="PR">
-        ${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}
-        ${'done failed cancelled'.includes(t.status) ? `<button class="btn-rerun" title="Re-run this ticket" onclick="event.stopPropagation();rerunTicket('${escAttr(t.issue_key)}')">Re-run</button>` : ''}
-      </div>
+      <div class="t-pr" data-label="PR">${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}</div>
+      <div class="t-action" data-label="Action">${'done failed cancelled'.includes(t.status) ? `<button class="btn-rerun" title="Re-run this ticket" onclick="event.stopPropagation();rerunTicket('${escAttr(t.issue_key)}')">Re-run</button>` : ''}</div>
     </div>` + (open ? renderInlineLog(t.issue_key) : '');
   }).join('');
 }
