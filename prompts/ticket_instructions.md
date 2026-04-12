@@ -25,7 +25,7 @@ It contains multiple repo directories (one per folder). Each repo is a git clone
          "worktree_path": "<absolute path to the worktree>",
          "branch": "<the branch name you created>",
          "pr_title": "<concise PR title, max 72 chars, referencing {key}>",
-         "pr_description": "<markdown PR description: what was changed and why, referencing {key}>"
+         "pr_description": "<markdown PR description using this exact structure:\n## Summary\n<what was implemented and why, referencing {key}>\n\n## Changes\n- <notable change 1>\n- <notable change 2>\n\n## Testing checklist\n- [ ] <specific manual test step based on what you changed>\n- [ ] <another specific step>\nWrite test steps that are concrete and actionable (e.g. 'Open the video editor and trim a clip' not 'Test the feature'). Include only steps relevant to what you actually changed.>"
        }}
      ]
    }}
