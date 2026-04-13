@@ -467,7 +467,8 @@ header {
 .queue-item:last-child { border-bottom: none; }
 .queue-num  { font-family: var(--mono); font-size: 10px; color: var(--text-3); width: 14px; flex-shrink: 0; }
 .queue-key  { font-family: var(--mono); font-size: 11px; color: var(--blue); flex-shrink: 0; }
-.queue-sum  { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-sum  { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.queue-item .btn-cancel { flex-shrink: 0; margin-left: 6px; }
 
 /* ── STATS PANEL ────────────────────────────────────────────── */
 .stats-grid {
