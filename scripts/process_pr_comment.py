@@ -233,6 +233,18 @@ def is_review_request(comment_text: str) -> bool:
 
 def find_local_repo(repo_slug: str) -> str | None:
     """Find a local repo directory matching the repo_slug under WORKSPACE_PATH."""
+    # Check the configured slug → local directory name mapping first.
+    try:
+        slug_map: dict = json.loads(db.get_setting("repo_slug_map", "{}") or "{}")
+    except (json.JSONDecodeError, Exception):
+        slug_map = {}
+    if repo_slug in slug_map:
+        mapped = slug_map[repo_slug]
+        candidate = os.path.join(WORKSPACE_PATH, mapped)
+        git_marker = os.path.join(candidate, ".git")
+        if os.path.isdir(candidate) and (os.path.isdir(git_marker) or os.path.isfile(git_marker)):
+            return candidate
+
     for entry in os.scandir(WORKSPACE_PATH):
         if not entry.is_dir():
             continue

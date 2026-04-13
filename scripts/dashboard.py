@@ -258,6 +258,7 @@ SETTINGS_DEFAULTS = {
     "create_ticket_issue_types": "",
     "create_ticket_templates": "{}",
     "create_ticket_timeout": "",
+    "repo_slug_map": "{}",
 }
 
 

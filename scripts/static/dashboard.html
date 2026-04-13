@@ -1558,6 +1558,10 @@ header {
         <input type="text" id="s-reviewers" class="form-input" placeholder="abc123, def456">
       </div>
       <div class="form-row">
+        <label class="form-lbl" for="s-repo-slug-map">Repo Slug Map <em>JSON — maps Bitbucket slug to local directory name, e.g. <code>{"vormats-api":"api"}</code></em></label>
+        <textarea id="s-repo-slug-map" class="form-ta" rows="3" placeholder='{"bitbucket-slug": "local-dir-name"}'></textarea>
+      </div>
+      <div class="form-row">
         <label class="form-lbl" for="s-ctx">Context Prompt</label>
         <textarea id="s-ctx" class="form-ta" rows="7"></textarea>
         <div class="ph-tags">
@@ -2139,6 +2143,7 @@ async function loadSettings() {
   document.getElementById('s-model').value  = s.model || '';
   document.getElementById('s-effort').value = s.effort || 'medium';
   document.getElementById('s-reviewers').value = s.reviewers || '';
+  document.getElementById('s-repo-slug-map').value = s.repo_slug_map || '{}';
   document.getElementById('s-ctx').value    = s.prompt_context || '';
   document.getElementById('s-instr').value  = s.prompt_instructions || '';
   document.getElementById('s-pr').value     = s.prompt_pr_comment || '';
@@ -2162,6 +2167,7 @@ async function saveSettings() {
       model:                    document.getElementById('s-model').value,
       effort:                   document.getElementById('s-effort').value,
       reviewers:                document.getElementById('s-reviewers').value,
+      repo_slug_map:            document.getElementById('s-repo-slug-map').value,
       prompt_context:           document.getElementById('s-ctx').value,
       prompt_instructions:      document.getElementById('s-instr').value,
       prompt_pr_comment:        document.getElementById('s-pr').value,
@@ -2185,6 +2191,7 @@ function resetSettings() {
   document.getElementById('s-model').value  = settingsDef.model || '';
   document.getElementById('s-effort').value = settingsDef.effort || 'medium';
   document.getElementById('s-reviewers').value = settingsDef.reviewers || '';
+  document.getElementById('s-repo-slug-map').value = settingsDef.repo_slug_map || '{}';
   document.getElementById('s-ctx').value    = settingsDef.prompt_context || '';
   document.getElementById('s-instr').value  = settingsDef.prompt_instructions || '';
   document.getElementById('s-pr').value     = settingsDef.prompt_pr_comment || '';
