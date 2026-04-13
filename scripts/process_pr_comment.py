@@ -582,7 +582,7 @@ def main():
         sys.exit(1)
 
     workspace = sys.argv[1]
-    repo_slug = sys.argv[2]
+    repo_slug = sys.argv[2].replace(" ", "-").lower()
     pr_id = sys.argv[3]
     comment_id = sys.argv[4]
     issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
