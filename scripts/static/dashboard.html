@@ -392,6 +392,78 @@ header {
 .btn-rerun:hover  { background: var(--surface-2); color: var(--text); }
 .btn-rerun:active { opacity: .7; }
 
+.btn-feedback {
+  padding: 3px 9px;
+  border-radius: var(--r);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--blue);
+  border: 1px solid var(--blue-line);
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.btn-feedback:hover  { background: var(--blue-dim); color: var(--text); }
+.btn-feedback:active { opacity: .7; }
+
+/* Feedback modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r3);
+  padding: 24px;
+  width: min(540px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-box h3 { font-size: 15px; font-weight: 600; color: var(--text); }
+.modal-box .modal-sub { font-size: 12px; color: var(--text-3); }
+.modal-box textarea {
+  width: 100%;
+  min-height: 120px;
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--term-text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
+}
+.modal-box textarea:focus { border-color: var(--blue-line); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-actions .btn-cancel-modal {
+  padding: 6px 14px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  background: none;
+}
+.modal-actions .btn-cancel-modal:hover { background: var(--surface-2); color: var(--text); }
+.modal-actions .btn-submit-feedback {
+  padding: 6px 16px;
+  border-radius: var(--r);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--blue);
+  border: none;
+}
+.modal-actions .btn-submit-feedback:hover { opacity: .88; }
+.modal-actions .btn-submit-feedback:disabled { opacity: .5; cursor: default; }
+
 /* Terminal — bounded height so long logs scroll inside instead of stretching the page */
 #job-running {
   min-height: 0;
@@ -1936,7 +2008,7 @@ function renderTickets(tickets) {
       <div class="t-dur" data-label="Duration">${fmtDur(dur)}</div>
       <div class="t-when" data-label="Updated">${relTime(t.finished_at || t.started_at || t.queued_at)}</div>
       <div class="t-pr" data-label="PR">${pr ? `<a href="${esc(pr.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR #${pr.pr_id}</a>` : ''}</div>
-      <div class="t-action" data-label="Action">${'done failed cancelled'.includes(t.status) ? `<button class="btn-rerun" title="Re-run this ticket" onclick="event.stopPropagation();rerunTicket('${escAttr(t.issue_key)}')">Re-run</button>` : ''}</div>
+      <div class="t-action" data-label="Action" style="display:flex;gap:5px;align-items:center">${'done failed cancelled'.includes(t.status) ? `<button class="btn-rerun" title="Re-run this ticket" onclick="event.stopPropagation();rerunTicket('${escAttr(t.issue_key)}')">Re-run</button>` : ''}${t.status === 'done' && pr ? `<button class="btn-feedback" title="Apply feedback to all PRs" onclick="event.stopPropagation();openFeedbackModal('${escAttr(t.issue_key)}')">Feedback</button>` : ''}</div>
     </div>` + (open ? renderInlineLog(t.issue_key) : '');
   }).join('');
 }
@@ -2772,11 +2844,58 @@ async function createTicketFromPreview(jobId) {
   }
 }
 
+// ── FEEDBACK MODAL ─────────────────────────────────────────────
+let _feedbackIssueKey = null;
+
+function openFeedbackModal(issueKey) {
+  _feedbackIssueKey = issueKey;
+  const overlay = document.getElementById('feedback-modal');
+  const ta = document.getElementById('feedback-text');
+  const sub = document.getElementById('feedback-modal-sub');
+  ta.value = '';
+  sub.textContent = `Ticket: ${issueKey}`;
+  overlay.classList.add('open');
+  setTimeout(() => ta.focus(), 50);
+}
+
+function closeFeedbackModal() {
+  document.getElementById('feedback-modal').classList.remove('open');
+  _feedbackIssueKey = null;
+}
+
+async function submitFeedback() {
+  const feedback = document.getElementById('feedback-text').value.trim();
+  if (!feedback || !_feedbackIssueKey) return;
+  const btn = document.getElementById('submit-feedback-btn');
+  btn.disabled = true;
+  btn.textContent = 'Queuing\u2026';
+  try {
+    await fetch('/api/ticket-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issue_key: _feedbackIssueKey, feedback }),
+    });
+    closeFeedbackModal();
+    refresh();
+  } catch {
+    btn.disabled = false;
+    btn.textContent = 'Apply Feedback';
+  }
+}
+
 // ── INIT ───────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('terminal').addEventListener('scroll', ev => {
     const el = ev.target;
     autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+  });
+  // Close feedback modal on overlay click
+  document.getElementById('feedback-modal').addEventListener('click', ev => {
+    if (ev.target === ev.currentTarget) closeFeedbackModal();
+  });
+  // Close on Escape
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') closeFeedbackModal();
   });
   refresh();
   connectSSE();
@@ -2784,5 +2903,17 @@ document.addEventListener('DOMContentLoaded', () => {
   ensureCreateInitialized();
 });
 </script>
+
+<div class="modal-overlay" id="feedback-modal">
+  <div class="modal-box">
+    <h3>Apply Feedback to All PRs</h3>
+    <div class="modal-sub" id="feedback-modal-sub"></div>
+    <textarea id="feedback-text" placeholder="Describe the changes needed across all PRs for this ticket\u2026"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel-modal" onclick="closeFeedbackModal()">Cancel</button>
+      <button class="btn-submit-feedback" id="submit-feedback-btn" onclick="submitFeedback()">Apply Feedback</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

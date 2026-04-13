@@ -6,6 +6,7 @@ or when the bot is mentioned in a Bitbucket PR comment.
 Jobs are queued and processed sequentially, one at a time.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -50,6 +51,16 @@ def requeue_ticket(issue_key: str) -> bool:
     db.ticket_queued(issue_key)
     ticket_queue.put(("ticket", issue_key))
     return True
+
+
+def queue_ticket_feedback(issue_key: str, feedback: str) -> str:
+    """Queue a feedback job for all PRs of a ticket. Returns the feedback job key."""
+    hex_id = os.urandom(3).hex()
+    job_key = f"{issue_key}-FB-{hex_id}"
+    feedback_b64 = base64.b64encode(feedback.encode()).decode()
+    db.ticket_queued(job_key, summary=f"Feedback for {issue_key}")
+    ticket_queue.put(("ticket_feedback", issue_key, job_key, feedback_b64))
+    return job_key
 
 
 def remove_queued_ticket(issue_key: str) -> bool:
@@ -99,6 +110,10 @@ def worker():
             _, workspace, repo_slug, pr_id, comment_id = job
             issue_key = f"PR-{repo_slug}#{pr_id}-C{comment_id}"
             cmd = ["python3", "scripts/process_pr_comment.py", workspace, repo_slug, pr_id, comment_id]
+        elif job_type == "ticket_feedback":
+            _, original_key, job_key, feedback_b64 = job
+            issue_key = job_key
+            cmd = ["python3", "scripts/process_ticket_feedback.py", original_key, job_key, feedback_b64]
         else:
             print(f"[worker] Unknown job type: {job_type}")
             ticket_queue.task_done()

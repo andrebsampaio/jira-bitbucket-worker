@@ -26,6 +26,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
             "/api/create-ticket": _api_create_ticket,
             "/api/rerun-ticket": _api_rerun_ticket,
             "/api/remove-queued": _api_remove_queued,
+            "/api/ticket-feedback": _api_ticket_feedback,
         }
         route_fn = post_routes.get(path)
         if route_fn:
@@ -243,6 +244,7 @@ DEFAULT_PROMPT_PR_COMMENT = _load_prompt("pr_comment.md")
 DEFAULT_PROMPT_PR_REVIEW = _load_prompt("pr_review.md")
 DEFAULT_PROMPT_CREATE_TICKET = _load_prompt("create_ticket.md")
 DEFAULT_PROMPT_CODE_CONTEXT = _load_prompt("code_context.md")
+DEFAULT_PROMPT_TICKET_FEEDBACK = _load_prompt("ticket_feedback.md")
 
 SETTINGS_DEFAULTS = {
     "prompt_context": DEFAULT_PROMPT_CONTEXT,
@@ -251,6 +253,7 @@ SETTINGS_DEFAULTS = {
     "prompt_pr_review": DEFAULT_PROMPT_PR_REVIEW,
     "prompt_create_ticket": DEFAULT_PROMPT_CREATE_TICKET,
     "prompt_code_context": DEFAULT_PROMPT_CODE_CONTEXT,
+    "prompt_ticket_feedback": DEFAULT_PROMPT_TICKET_FEEDBACK,
     "model": "",
     "effort": "medium",
     "reviewers": "",
@@ -452,6 +455,33 @@ def _api_create_ticket(handler):
             results.append({"ok": False, "error": str(exc), "preview_job_id": preview_job_id})
 
     _send_json(handler, {"ok": True, "results": results})
+
+
+def _api_ticket_feedback(handler):
+    import sys
+    content_length = int(handler.headers.get("Content-Length", 0))
+    body = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        handler.send_response(400)
+        handler.end_headers()
+        return
+    issue_key = (payload.get("issue_key") or "").strip()
+    feedback = (payload.get("feedback") or "").strip()
+    if not issue_key or not feedback:
+        handler.send_response(400)
+        handler.send_header("Content-Type", "application/json")
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": "issue_key and feedback are required"}).encode())
+        return
+    main_mod = sys.modules.get("__main__")
+    queue_fn = getattr(main_mod, "queue_ticket_feedback", None)
+    if queue_fn is None:
+        _send_json(handler, {"ok": False, "error": "Feedback queue not available"})
+        return
+    job_key = queue_fn(issue_key, feedback)
+    _send_json(handler, {"ok": True, "issue_key": issue_key, "job_key": job_key})
 
 
 def _api_stream(handler):
