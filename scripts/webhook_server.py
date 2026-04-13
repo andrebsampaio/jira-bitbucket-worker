@@ -52,6 +52,11 @@ def requeue_ticket(issue_key: str) -> bool:
     return True
 
 
+def remove_queued_ticket(issue_key: str) -> bool:
+    """Cancel a queued (not yet started) ticket. Returns True if it was queued."""
+    return db.ticket_remove_queued(issue_key)
+
+
 def cancel_current_job() -> str | None:
     """Kill the current process_ticket subprocess and all its children. Returns the issue key or None."""
     with _proc_lock:
@@ -96,6 +101,12 @@ def worker():
             cmd = ["python3", "scripts/process_pr_comment.py", workspace, repo_slug, pr_id, comment_id]
         else:
             print(f"[worker] Unknown job type: {job_type}")
+            ticket_queue.task_done()
+            continue
+
+        # Skip jobs that were removed from the queue before they started.
+        if db.ticket_is_cancelled(issue_key):
+            print(f"[worker] Skipping cancelled job {issue_key}")
             ticket_queue.task_done()
             continue
 

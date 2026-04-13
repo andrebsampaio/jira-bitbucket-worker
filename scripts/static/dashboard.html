@@ -1868,6 +1868,7 @@ function renderQueue(queue) {
     `<span class="queue-num">${i + 1}</span>` +
     `<span class="queue-key">${esc(t.issue_key)}</span>` +
     `<span class="queue-sum">${esc(t.summary || '')}</span>` +
+    `<button class="btn-cancel" title="Remove from queue" onclick="removeQueued('${escAttr(t.issue_key)}')">Remove</button>` +
     `</div>`
   ).join('');
 }
@@ -2020,6 +2021,19 @@ async function cancelJob() {
   btn.disabled = true;
   try { await fetch('/api/cancel', { method: 'POST' }); } catch {}
   setTimeout(refresh, 1200);
+}
+
+async function removeQueued(issueKey) {
+  const btn = document.querySelector(`.btn-cancel[onclick*="${CSS.escape(issueKey)}"]`);
+  if (btn) { btn.textContent = 'Removing\u2026'; btn.disabled = true; }
+  try {
+    await fetch('/api/remove-queued', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issue_key: issueKey }),
+    });
+  } catch {}
+  setTimeout(refresh, 800);
 }
 
 async function rerunTicket(issueKey) {

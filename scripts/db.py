@@ -184,6 +184,30 @@ def ticket_cancelled(issue_key: str):
     _notify("ticket_update", {"issue_key": issue_key, "status": "cancelled"})
 
 
+def ticket_remove_queued(issue_key: str) -> bool:
+    """Cancel a ticket only if it is still queued (not yet started). Returns True if updated."""
+    now = time.time()
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE tickets SET status='cancelled', finished_at=? WHERE issue_key=? AND status='queued'",
+            (now, issue_key),
+        )
+        updated = cur.rowcount > 0
+    if updated:
+        _log_event(issue_key, "cancelled", f"{issue_key} removed from queue by user")
+        _notify("ticket_update", {"issue_key": issue_key, "status": "cancelled"})
+    return updated
+
+
+def ticket_is_cancelled(issue_key: str) -> bool:
+    """Return True if the ticket's current status is 'cancelled'."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT status FROM tickets WHERE issue_key=?", (issue_key,)
+        ).fetchone()
+    return bool(row and row["status"] == "cancelled")
+
+
 def ticket_finished(issue_key: str, error: str | None = None):
     now = time.time()
     status = "failed" if error else "done"
