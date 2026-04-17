@@ -986,6 +986,7 @@ header {
   margin-top: 0;
   display: grid;
   grid-template-columns: 320px 1fr;
+  align-items: start;
   gap: 16px;
 }
 .preview-list-card,
@@ -995,7 +996,7 @@ header {
   min-height: 360px;
 }
 .preview-jobs-list {
-  flex: 1;
+  height: 420px;
   overflow-y: auto;
   padding: 10px 0;
 }
@@ -1338,6 +1339,7 @@ header {
   .col-main, .col-side { padding: 16px 12px; }
   .col-side { border-top: none; padding-top: 0; }
   .preview-board { grid-template-columns: 1fr; }
+  .preview-jobs-list { height: 320px; }
   .t-head { display: none; }
   .t-row {
     grid-template-columns: 1fr;
@@ -2464,6 +2466,14 @@ function clearBulkInput() {
   if (bulkEl) bulkEl.value = '';
 }
 
+function resetTicketFields() {
+  clearBulkInput();
+  const list = document.getElementById('ct-list');
+  if (!list) return;
+  list.innerHTML = '';
+  addTicketInput();
+}
+
 function renumberTickets() {
   const items = document.querySelectorAll('#ct-list .ct-item');
   const single = items.length === 1;
@@ -2760,6 +2770,7 @@ async function previewTickets() {
     mergePreviewJobs(jobs);
     renderPreviewJobs();
     if (jobs.length) selectPreviewJob(jobs[0].id);
+    resetTicketFields();
   } catch (err) {
     alert(`Preview request failed: ${err.message || err}`);
   } finally {
