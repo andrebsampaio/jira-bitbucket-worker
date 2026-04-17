@@ -211,18 +211,24 @@ def handle_event(payload: dict, event_key: str = ""):
 
     # JIRA event (has webhookEvent field)
     event = payload.get("webhookEvent", "")
-    if event != "jira:issue_updated":
+    if event not in ("jira:issue_updated", "jira:issue_created"):
         return
 
-    changelog = payload.get("changelog", {})
-    items = changelog.get("items", [])
-    assignee_change = next((i for i in items if i.get("field") == "assignee"), None)
-    if not assignee_change:
-        return
+    if event == "jira:issue_created":
+        assignee = payload.get("issue", {}).get("fields", {}).get("assignee") or {}
+        assignee_id = assignee.get("accountId") or assignee.get("name", "")
+        if assignee_id != TRIGGER_ASSIGNEE:
+            return
+    else:
+        changelog = payload.get("changelog", {})
+        items = changelog.get("items", [])
+        assignee_change = next((i for i in items if i.get("field") == "assignee"), None)
+        if not assignee_change:
+            return
 
-    new_assignee = assignee_change.get("to") or assignee_change.get("toString", "")
-    if new_assignee != TRIGGER_ASSIGNEE:
-        return
+        new_assignee = assignee_change.get("to") or assignee_change.get("toString", "")
+        if new_assignee != TRIGGER_ASSIGNEE:
+            return
 
     issue_key = payload.get("issue", {}).get("key")
     if not issue_key:
