@@ -6,6 +6,7 @@ Designed to be mixed into the existing webhook server.
 import json
 import os
 import time
+from urllib.parse import unquote
 
 from scripts import db
 
@@ -159,6 +160,7 @@ def _api_stats(handler):
 
 def _api_logs(handler, issue_key: str):
     """Return log lines for a ticket. Supports ?since_id=N for incremental fetches."""
+    issue_key = unquote(issue_key)
     query = handler.path.split("?", 1)[1] if "?" in handler.path else ""
     since_id = 0
     for param in query.split("&"):
