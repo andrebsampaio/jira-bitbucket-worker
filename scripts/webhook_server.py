@@ -260,7 +260,7 @@ def handle_pr_comment_event(payload: dict):
     pr_id = str(pr.get("id", ""))
     comment_id = str(comment.get("id", ""))
     repo = payload.get("repository", {})
-    repo_slug = repo.get("name", "") or repo.get("full_name", "").split("/")[-1]
+    repo_slug = (repo.get("name", "") or repo.get("full_name", "").split("/")[-1]).replace(" ", "-").lower()
     workspace = repo.get("full_name", "").split("/")[0] if "/" in repo.get("full_name", "") else ""
 
     if not all([pr_id, comment_id, repo_slug, workspace]):
