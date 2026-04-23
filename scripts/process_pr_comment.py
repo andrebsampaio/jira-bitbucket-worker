@@ -38,6 +38,14 @@ BOT_REVIEW_KEYWORDS = [
     for kw in os.environ.get("BOT_REVIEW_KEYWORDS", "review,please review,review please").split(",")
     if kw.strip()
 ]
+BOT_FIX_ALL_KEYWORDS = [
+    kw.strip().lower()
+    for kw in os.environ.get(
+        "BOT_FIX_ALL_KEYWORDS",
+        "fix all,fix all comments,fix them all,fix all open comments,address all,address all comments",
+    ).split(",")
+    if kw.strip()
+]
 REVIEW_OUTPUT_FILE = ".codex-review.json"
 
 
@@ -193,6 +201,38 @@ def build_prompt(comment_text: str, file_path: str, line: str,
     return template.format_map(template_vars)
 
 
+def build_fix_all_prompt(comments: list[dict], pr_title: str, source_branch: str,
+                         repo_slug: str, diff: str) -> str:
+    from scripts.dashboard import SETTINGS_DEFAULTS
+
+    sections = []
+    for idx, entry in enumerate(comments, 1):
+        file_path = entry.get("file_path", "") or "(no file)"
+        line = entry.get("line", "") or "(no line)"
+        author = entry.get("author", "Unknown")
+        text = (entry.get("text", "") or "").strip()
+        thread = (entry.get("conversation", "") or "").strip()
+        block = [
+            f"Comment #{idx} — {author} on {file_path}:{line}",
+            text or "(empty)",
+        ]
+        if thread:
+            block.append(f"Prior thread:\n{thread}")
+        sections.append("\n".join(block))
+    comments_section = "\n\n---\n\n".join(sections) if sections else "(none)"
+
+    template_vars = {
+        "comments_section": comments_section,
+        "comment_count": len(comments),
+        "diff": diff,
+        "pr_title": pr_title,
+        "source_branch": source_branch,
+        "repo_slug": repo_slug,
+    }
+    template = db.get_setting("prompt_pr_fix_all", SETTINGS_DEFAULTS["prompt_pr_fix_all"])
+    return template.format_map(template_vars)
+
+
 def build_review_prompt(pr_title: str, source_branch: str,
                         repo_slug: str, diff: str) -> str:
     from scripts.dashboard import SETTINGS_DEFAULTS
@@ -207,14 +247,13 @@ def build_review_prompt(pr_title: str, source_branch: str,
     return template.format_map(template_vars)
 
 
-def is_review_request(comment_text: str) -> bool:
-    """Determine whether the mention should trigger a PR review."""
-    if not BOT_REVIEW_KEYWORDS:
+def _matches_keyword(comment_text: str, keywords: list[str]) -> bool:
+    if not keywords:
         return False
     normalized = re.sub(r"\s+", " ", (comment_text or "")).strip().lower()
     if not normalized:
         return False
-    for keyword in BOT_REVIEW_KEYWORDS:
+    for keyword in keywords:
         key = keyword.lower()
         if not key:
             continue
@@ -225,6 +264,68 @@ def is_review_request(comment_text: str) -> bool:
         ):
             return True
     return False
+
+
+def is_review_request(comment_text: str) -> bool:
+    """Determine whether the mention should trigger a PR review."""
+    return _matches_keyword(comment_text, BOT_REVIEW_KEYWORDS)
+
+
+def is_fix_all_request(comment_text: str) -> bool:
+    """Determine whether the mention should trigger a fix of all open inline comments."""
+    return _matches_keyword(comment_text, BOT_FIX_ALL_KEYWORDS)
+
+
+def collect_open_inline_comments(all_comments: list[dict], trigger_comment_id: str) -> list[dict]:
+    """
+    Return unresolved, non-deleted, non-bot-authored inline comments.
+
+    Each entry contains the fields needed for the fix-all prompt:
+    id, file_path, line, author, text, conversation.
+    """
+    open_items: list[dict] = []
+    for c in all_comments:
+        if c.get("deleted"):
+            continue
+        if c.get("resolution"):
+            continue
+        inline = c.get("inline") or {}
+        if not inline:
+            continue
+        author = (c.get("user") or {}).get("username", "")
+        if author and author == BITBUCKET_USER:
+            continue
+        comment_id = c.get("id")
+        if comment_id is None or str(comment_id) == str(trigger_comment_id):
+            continue
+        text = (c.get("content") or {}).get("raw", "").strip()
+        if not text or BOT_MENTION in text:
+            # Skip bot-directed messages; they are commands, not review feedback.
+            continue
+        # Skip replies — we want the top-level inline comment, which carries the
+        # file/line anchor; its thread context gets folded in separately.
+        if c.get("parent"):
+            continue
+
+        thread_replies = [
+            other for other in all_comments
+            if (other.get("parent") or {}).get("id") == comment_id
+            and not other.get("deleted")
+        ]
+        thread_replies.sort(key=lambda x: x.get("created_on", ""))
+        conversation = format_comment_thread(thread_replies)
+
+        open_items.append({
+            "id": comment_id,
+            "file_path": inline.get("path", ""),
+            "line": inline.get("to") or inline.get("from") or "",
+            "author": (c.get("user") or {}).get("display_name", "Unknown"),
+            "text": text,
+            "conversation": conversation,
+        })
+
+    open_items.sort(key=lambda x: (x.get("file_path", ""), x.get("line") or 0))
+    return open_items
 
 
 # ---------------------------------------------------------------------------
@@ -551,6 +652,79 @@ def process_fix_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: 
         remove_worktree(worktree_path)
 
 
+def process_fix_all_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: str,
+                         issue_key: str, source_branch: str, pr_title: str,
+                         full_diff: str, open_comments: list[dict]) -> None:
+    prompt = build_fix_all_prompt(
+        comments=open_comments,
+        pr_title=pr_title,
+        source_branch=source_branch,
+        repo_slug=repo_slug,
+        diff=full_diff,
+    )
+    print(f"[pr-comment] Fix-all prompt ({len(open_comments)} comments):\n{'-'*60}\n{prompt}\n{'-'*60}")
+
+    repo_dir = find_local_repo(repo_slug)
+    if not repo_dir:
+        raise RuntimeError(f"No local repo found matching '{repo_slug}' under {WORKSPACE_PATH}")
+
+    worktree_path = create_worktree(repo_dir, source_branch, pr_id)
+    print(f"[pr-comment] Created worktree at {worktree_path}")
+
+    try:
+        run_codex_with_prompt(prompt, worktree_path, issue_key)
+
+        codex_commit_file = os.path.join(worktree_path, ".codex-commit.json")
+        codex_commit_message = f"fix: address {len(open_comments)} open review comment(s)"
+        codex_reply_template = "Fixed in commit `{hash}`"
+        if os.path.isfile(codex_commit_file):
+            try:
+                with open(codex_commit_file, encoding="utf-8") as f:
+                    codex_output = json.load(f)
+                codex_commit_message = codex_output.get("commit_message") or codex_commit_message
+                codex_reply_template = codex_output.get("reply_message") or codex_reply_template
+                print(f"[pr-comment] Loaded codex commit output from .codex-commit.json")
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[pr-comment] WARNING: could not parse .codex-commit.json: {e}", file=sys.stderr)
+        else:
+            print(f"[pr-comment] No .codex-commit.json found; using default commit message")
+
+        db.ticket_phase(issue_key, "pushing", f"Committing and pushing fixes for {issue_key}")
+
+        if os.path.isfile(codex_commit_file):
+            os.remove(codex_commit_file)
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        if not status.stdout.strip():
+            raise RuntimeError("Codex made no file changes")
+
+        subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", codex_commit_message],
+            cwd=worktree_path,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "push", "origin", f"HEAD:{source_branch}"],
+            cwd=worktree_path,
+            check=True,
+        )
+        commit_hash = get_commit_hash(worktree_path)
+        print(f"[pr-comment] Pushed fixes to {source_branch} (commit {commit_hash})")
+
+        reply_body = codex_reply_template.replace("{hash}", commit_hash)
+        reply_to_comment(workspace, repo_slug, pr_id, comment_id, reply_body)
+        print(f"[pr-comment] Replied to trigger comment {comment_id}")
+    finally:
+        print(f"[pr-comment] Removing worktree {worktree_path}")
+        remove_worktree(worktree_path)
+
+
 def process_review_flow(*, workspace: str, repo_slug: str, pr_id: str, comment_id: str,
                         issue_key: str, source_branch: str, pr_title: str,
                         full_diff: str) -> None:
@@ -635,6 +809,26 @@ def main():
             pr_title=pr_title,
             full_diff=full_diff,
         )
+    elif is_fix_all_request(comment_text):
+        open_comments = collect_open_inline_comments(all_comments, comment_id)
+        print(f"[pr-comment] Found {len(open_comments)} open inline comment(s) to fix")
+        if not open_comments:
+            reply_to_comment(
+                workspace, repo_slug, pr_id, comment_id,
+                "No open inline comments found to fix.",
+            )
+        else:
+            process_fix_all_flow(
+                workspace=workspace,
+                repo_slug=repo_slug,
+                pr_id=pr_id,
+                comment_id=comment_id,
+                issue_key=issue_key,
+                source_branch=source_branch,
+                pr_title=pr_title,
+                full_diff=full_diff,
+                open_comments=open_comments,
+            )
     else:
         process_fix_flow(
             workspace=workspace,

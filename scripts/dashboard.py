@@ -244,6 +244,7 @@ DEFAULT_PROMPT_CONTEXT = _load_prompt("ticket_context.md")
 DEFAULT_PROMPT_INSTRUCTIONS = _load_prompt("ticket_instructions.md")
 DEFAULT_PROMPT_PR_COMMENT = _load_prompt("pr_comment.md")
 DEFAULT_PROMPT_PR_REVIEW = _load_prompt("pr_review.md")
+DEFAULT_PROMPT_PR_FIX_ALL = _load_prompt("pr_fix_all.md")
 DEFAULT_PROMPT_CREATE_TICKET = _load_prompt("create_ticket.md")
 DEFAULT_PROMPT_CODE_CONTEXT = _load_prompt("code_context.md")
 DEFAULT_PROMPT_TICKET_FEEDBACK = _load_prompt("ticket_feedback.md")
@@ -253,6 +254,7 @@ SETTINGS_DEFAULTS = {
     "prompt_instructions": DEFAULT_PROMPT_INSTRUCTIONS,
     "prompt_pr_comment": DEFAULT_PROMPT_PR_COMMENT,
     "prompt_pr_review": DEFAULT_PROMPT_PR_REVIEW,
+    "prompt_pr_fix_all": DEFAULT_PROMPT_PR_FIX_ALL,
     "prompt_create_ticket": DEFAULT_PROMPT_CREATE_TICKET,
     "prompt_code_context": DEFAULT_PROMPT_CODE_CONTEXT,
     "prompt_ticket_feedback": DEFAULT_PROMPT_TICKET_FEEDBACK,
