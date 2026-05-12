@@ -280,6 +280,7 @@ The settings page at `/dashboard/settings` lets you configure the bot without re
 - **Ticket prompt context**: Template for building the JIRA ticket prompt. Available variables: `{key}`, `{summary}`, `{description}`, `{components}`, `{labels}`, `{priority}`, `{issue_type}`, `{acceptance_criteria}`, `{workspace_path}`, `{run_manifest}`
 - **Ticket prompt instructions**: Workflow instructions appended to the ticket prompt.
 - **PR comment prompt**: Template for building the PR comment prompt. Available variables: `{comment}`, `{file_path}`, `{line}`, `{diff}`, `{pr_title}`, `{source_branch}`, `{repo_slug}`
+- **Maintenance**: Update the app from Git, update Codex, and restart the server. The Codex update defaults to `npm install -g @openai/codex@latest`; set `CODEX_UPDATE_COMMAND` if this server updates Codex another way.
 
 All settings are persisted to a local SQLite database and can be reset to defaults from the settings page.
 

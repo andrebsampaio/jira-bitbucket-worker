@@ -5,13 +5,29 @@ Designed to be mixed into the existing webhook server.
 
 import json
 import os
+import shlex
+import shutil
+import subprocess
+import sys
+import threading
 import time
 from urllib.parse import unquote
 
 from scripts import db
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _server_start_time = time.time()
+_update_lock = threading.Lock()
+_update_thread: threading.Thread | None = None
+_update_state = {
+    "status": "idle",
+    "started_at": None,
+    "finished_at": None,
+    "message": "",
+    "steps": [],
+    "error": "",
+}
 
 
 def handle_dashboard_request(handler, method="GET") -> bool:
@@ -28,6 +44,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
             "/api/rerun-ticket": _api_rerun_ticket,
             "/api/remove-queued": _api_remove_queued,
             "/api/ticket-feedback": _api_ticket_feedback,
+            "/api/app-update": _api_app_update_start,
         }
         route_fn = post_routes.get(path)
         if route_fn:
@@ -50,6 +67,7 @@ def handle_dashboard_request(handler, method="GET") -> bool:
         "/api/stats": _api_stats,
         "/api/webhook-health": _api_webhook_health,
         "/api/settings": _api_settings_get,
+        "/api/app-update": _api_app_update_status,
         "/api/stream": _api_stream,
         "/api/jira-projects": _api_jira_projects,
         "/api/preview-jobs": _api_preview_jobs,
@@ -227,6 +245,133 @@ def _api_cancel(handler):
         _send_json(handler, {"cancelled": True, "issue_key": issue_key})
     else:
         _send_json(handler, {"cancelled": False, "error": "No job is currently running"})
+
+
+def _api_app_update_status(handler):
+    with _update_lock:
+        update = dict(_update_state)
+    _send_json(handler, {"update": update})
+
+
+def _api_app_update_start(handler):
+    global _update_thread
+
+    active_reason = _active_work_reason()
+    if active_reason:
+        _send_json(handler, {"ok": False, "error": active_reason, "update": _current_update_state()})
+        return
+
+    with _update_lock:
+        if _update_state["status"] in ("running", "restarting"):
+            update = dict(_update_state)
+        else:
+            _update_state.update({
+                "status": "running",
+                "started_at": time.time(),
+                "finished_at": None,
+                "message": "Starting update",
+                "steps": [],
+                "error": "",
+            })
+            _update_thread = threading.Thread(target=_run_app_update, daemon=True, name="app-update")
+            _update_thread.start()
+            update = dict(_update_state)
+    _send_json(handler, {"ok": True, "update": update})
+
+
+def _current_update_state() -> dict:
+    with _update_lock:
+        return dict(_update_state)
+
+
+def _active_work_reason() -> str:
+    main_mod = sys.modules.get("__main__")
+    proc = getattr(main_mod, "_current_proc", None) if main_mod else None
+    if proc is not None and proc.poll() is None:
+        key = getattr(main_mod, "_current_issue_key", "") if main_mod else ""
+        return f"Cannot update while {key or 'a job'} is running."
+
+    q = getattr(main_mod, "ticket_queue", None) if main_mod else None
+    if q is not None and q.qsize() > 0:
+        return f"Cannot update while {q.qsize()} job(s) are queued."
+
+    status = db.get_worker_status()
+    if status.get("current_ticket"):
+        key = status["current_ticket"].get("issue_key") or "a job"
+        return f"Cannot update while {key} is marked as running."
+    if status.get("queue_size", 0) > 0:
+        return f"Cannot update while {status['queue_size']} job(s) are queued."
+
+    preview_ids = db.get_preview_job_ids_by_status(("queued", "processing"))
+    if preview_ids:
+        return f"Cannot update while {len(preview_ids)} ticket preview job(s) are pending."
+
+    return ""
+
+
+def _run_app_update():
+    try:
+        db.log_event(None, "app_update", "Remote app update started")
+        git_step = _run_update_step("Pull latest app changes", ["git", "pull", "--ff-only"], PROJECT_ROOT, timeout=180)
+
+        codex_cmd = _codex_update_command()
+        if not codex_cmd:
+            raise RuntimeError("Could not find npm. Set CODEX_UPDATE_COMMAND to the command that updates Codex on this server.")
+        codex_step = _run_update_step("Update Codex CLI", codex_cmd, PROJECT_ROOT, timeout=900)
+
+        message = "Update complete. Restarting server."
+        _set_update_state(status="restarting", message=message, steps=[git_step, codex_step], finished_at=time.time())
+        db.log_event(None, "app_update", message)
+        time.sleep(1.0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as exc:
+        message = str(exc)
+        _set_update_state(status="failed", message="Update failed", error=message, finished_at=time.time())
+        db.log_event(None, "app_update_failed", message)
+
+
+def _codex_update_command() -> list[str] | None:
+    custom = os.environ.get("CODEX_UPDATE_COMMAND", "").strip()
+    if custom:
+        return shlex.split(custom)
+    if shutil.which("npm"):
+        return ["npm", "install", "-g", "@openai/codex@latest"]
+    return None
+
+
+def _run_update_step(label: str, cmd: list[str], cwd: str, timeout: int) -> dict:
+    _set_update_state(message=label)
+    env = os.environ.copy()
+    env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    step = {
+        "label": label,
+        "command": " ".join(shlex.quote(part) for part in cmd),
+        "returncode": result.returncode,
+        "output": output[-4000:],
+    }
+    _append_update_step(step)
+    if result.returncode != 0:
+        raise RuntimeError(f"{label} failed with exit code {result.returncode}: {output[-1000:]}")
+    return step
+
+
+def _set_update_state(**changes):
+    with _update_lock:
+        _update_state.update(changes)
+
+
+def _append_update_step(step: dict):
+    with _update_lock:
+        _update_state["steps"] = [*_update_state.get("steps", []), step]
 
 
 # -- Default prompt templates -------------------------------------------------

@@ -849,6 +849,22 @@ header {
   transition: background .15s, color .15s;
 }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn-primary:disabled,
+.btn-ghost:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.update-status {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  color: var(--text-3);
+}
+.update-status.running { color: var(--amber); }
+.update-status.failed { color: var(--red); }
+.update-status.done { color: var(--green); }
 
 .toast {
   display: none;
@@ -1724,6 +1740,14 @@ header {
       </div>
     </div>
 
+    <div class="settings-group">
+      <div class="sg-title">Maintenance</div>
+      <div class="settings-actions">
+        <button class="btn-ghost" id="update-app-btn" onclick="updateApp()">Update App and Restart</button>
+      </div>
+      <div class="update-status" id="update-app-status">Idle</div>
+    </div>
+
     <div class="settings-actions">
       <button class="btn-primary" onclick="saveSettings()">Save</button>
       <button class="btn-ghost" onclick="resetSettings()">Reset to Defaults</button>
@@ -1749,6 +1773,7 @@ let expandedKey = null;
 let cachedLogs  = {};
 let prMap       = {};
 let settingsDef = {};
+let updatePollTimer = null;
 
 const MAX_LINES = 600;
 
@@ -2245,6 +2270,7 @@ async function loadSettings() {
   let templates = {};
   try { templates = JSON.parse(s.create_ticket_templates || '{}'); } catch {}
   rebuildTemplateEditors(templates);
+  loadUpdateStatus();
 }
 
 async function saveSettings() {
@@ -2291,6 +2317,89 @@ function resetSettings() {
   document.getElementById('s-ct-prompt').value = settingsDef.prompt_create_ticket || '';
   document.getElementById('s-ct-context-prompt').value = settingsDef.prompt_code_context || '';
   rebuildTemplateEditors({});
+}
+
+async function loadUpdateStatus() {
+  const data = await api('/api/app-update');
+  if (data?.update) renderUpdateStatus(data.update);
+}
+
+async function updateApp() {
+  const btn = document.getElementById('update-app-btn');
+  if (!confirm('Update the app, update Codex, and restart the server?')) return;
+  btn.disabled = true;
+  setUpdateMessage('Starting update...', 'running');
+  try {
+    const res = await fetch('/api/app-update', { method: 'POST' });
+    const data = await res.json();
+    if (!data.ok) {
+      setUpdateMessage(data.error || 'Update could not start', 'failed');
+      btn.disabled = false;
+      return;
+    }
+    renderUpdateStatus(data.update);
+    startUpdatePolling();
+  } catch {
+    setUpdateMessage('Update request failed', 'failed');
+    btn.disabled = false;
+  }
+}
+
+function startUpdatePolling() {
+  if (updatePollTimer) clearInterval(updatePollTimer);
+  updatePollTimer = setInterval(loadUpdateStatus, 1500);
+}
+
+function renderUpdateStatus(update) {
+  const status = update.status || 'idle';
+  const btn = document.getElementById('update-app-btn');
+  const label = update.message || status;
+  const lastStep = update.steps?.length ? update.steps[update.steps.length - 1] : null;
+  const suffix = lastStep?.returncode === 0 ? ` (${lastStep.label} done)` : '';
+
+  if (status === 'running') {
+    btn.disabled = true;
+    setUpdateMessage(label + suffix, 'running');
+    startUpdatePolling();
+  } else if (status === 'restarting') {
+    btn.disabled = true;
+    setUpdateMessage('Restarting server...', 'running');
+    if (updatePollTimer) clearInterval(updatePollTimer);
+    setTimeout(waitForServerRestart, 2500);
+  } else if (status === 'failed') {
+    btn.disabled = false;
+    setUpdateMessage(update.error || update.message || 'Update failed', 'failed');
+    if (updatePollTimer) clearInterval(updatePollTimer);
+  } else {
+    btn.disabled = false;
+    setUpdateMessage(status === 'idle' ? 'Idle' : label, status === 'done' ? 'done' : '');
+  }
+}
+
+function setUpdateMessage(message, cls) {
+  const el = document.getElementById('update-app-status');
+  el.textContent = message;
+  el.className = `update-status ${cls || ''}`;
+}
+
+async function waitForServerRestart() {
+  const started = Date.now();
+  async function check() {
+    try {
+      const res = await fetch(`/api/status?restart=${Date.now()}`);
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+    } catch {}
+    if (Date.now() - started < 60000) {
+      setTimeout(check, 1500);
+    } else {
+      setUpdateMessage('Restart is taking longer than expected', 'failed');
+      document.getElementById('update-app-btn').disabled = false;
+    }
+  }
+  check();
 }
 
 function rebuildTemplateEditors(existingTemplates) {
